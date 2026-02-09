@@ -69,6 +69,7 @@ const Post = ({ post }) => {
       <PostHeader
         author={author}
         time={dayjs(postState.createdAt).fromNow()}
+        postId={postState._id}
       />
 
       {/* Caption */}

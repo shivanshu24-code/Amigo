@@ -356,13 +356,13 @@ const OtherUserProfile = () => {
                 {activeTab === "posts" && (
                     <>
                         {userPosts.length > 0 ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 md:gap-4">
+                            <div className="grid grid-cols-3 gap-1 sm:gap-4 md:gap-6">
                                 {userPosts.map((post) => (
                                     <div
                                         key={post._id}
-                                        className="relative bg-white rounded-xl sm:rounded-2xl overflow-hidden group cursor-pointer border border-gray-100 hover:shadow-lg transition"
+                                        className="relative bg-white rounded-lg sm:rounded-2xl overflow-hidden group cursor-pointer border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300"
                                     >
-                                        <div className="aspect-square sm:aspect-[4/5]">
+                                        <div className="aspect-square">
                                             {post.media ? (
                                                 <img
                                                     src={post.media}
@@ -370,18 +370,25 @@ const OtherUserProfile = () => {
                                                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                                                 />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center p-3 bg-gradient-to-br from-gray-50 to-gray-100">
-                                                    <p className="text-xs sm:text-sm text-gray-500 text-center line-clamp-3 italic">
-                                                        {post.caption}
+                                                <div className="w-full h-full flex items-center justify-center p-4 bg-gradient-to-br from-indigo-50/30 to-purple-50/30">
+                                                    <p className="text-xs sm:text-sm text-gray-600 italic text-center line-clamp-4 leading-relaxed">
+                                                        "{post.caption}"
                                                     </p>
                                                 </div>
                                             )}
                                         </div>
 
-                                        <div className="hidden sm:flex absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition items-center justify-center gap-4 text-white">
-                                            <div className="flex items-center gap-1">
-                                                <Heart className="w-5 h-5 fill-white" />
-                                                <span className="font-bold">{post.likes?.length || 0}</span>
+                                        {/* Premium Hover overlay */}
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center text-white backdrop-blur-[2px]">
+                                            <div className="flex items-center gap-6">
+                                                <div className="flex flex-col items-center gap-1 group/stat transition-transform hover:scale-110">
+                                                    <Heart className="w-6 h-6 fill-white drop-shadow-lg" />
+                                                    <span className="font-bold text-sm">{post.likes?.length || 0}</span>
+                                                </div>
+                                                <div className="flex flex-col items-center gap-1 group/stat transition-transform hover:scale-110">
+                                                    <MessageCircle className="w-6 h-6 fill-white drop-shadow-lg" />
+                                                    <span className="font-bold text-sm">{post.comments?.length || 0}</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

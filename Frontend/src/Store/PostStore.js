@@ -81,6 +81,8 @@ export const usePostStore = create((set, get) => ({
             if (res.ok) {
                 set((state) => ({
                     posts: state.posts.filter((p) => p._id !== postId),
+                    userPosts: state.userPosts.filter((p) => p._id !== postId),
+                    savedPostsList: state.savedPostsList.filter((p) => p._id !== postId),
                 }));
                 return { success: true };
             }
