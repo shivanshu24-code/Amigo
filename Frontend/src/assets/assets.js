@@ -1,0 +1,5 @@
+export{default as home}  from '../assets/home.png'
+export{default as search}  from '../assets/search.png'
+export{default as conversation}  from '../assets/conversation.png'
+export{default as wheel}  from '../assets/wheel.png'
+export{default as account} from '../assets/account.png'

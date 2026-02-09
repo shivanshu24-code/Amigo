@@ -1,0 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+    --color-dark-bg: #000000;
+    --color-dark-surface: #000000;
+    --color-dark-border: #262626;
+    --color-dark-text-primary: #f5f5f5;
+    --color-dark-text-secondary: #a8a8a8;
+}
+
+* {
+    font-family: "Inter", sans-serif;
+}
+
+/* Global Dark Mode Smooth Transition */
+body {
+    @apply transition-colors duration-200;
+}
+
+/* Dark Mode Overrides - Instagram Style */
+.dark {
+    color-scheme: dark;
+}
+
+.dark body {
+    background-color: #000000;
+    color: #f5f5f5;
+}
+
+/* Component Level Overrides */
+.dark .bg-white {
+    background-color: #000000 !important;
+}
+
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+    background-color: #000000 !important;
+}
+
+/* Minimalist Borders */
+.dark .border-gray-200,
+.dark .border-gray-300,
+.dark .border-gray-100,
+.dark .border-gray-50,
+.dark .border {
+    border-color: #262626 !important;
+}
+
+/* Text Refinement */
+.dark .text-gray-900,
+.dark .text-black {
+    color: #f5f5f5 !important;
+}
+
+.dark .text-gray-800,
+.dark .text-gray-700 {
+    color: #e4e4e7 !important;
+}
+
+.dark .text-gray-600,
+.dark .text-gray-500 {
+    color: #a8a8a8 !important;
+}
+
+/* Hover Effects */
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-gray-200:hover {
+    background-color: #121212 !important;
+}
+
+/* Inputs & Modals */
+.dark input,
+.dark textarea {
+    background-color: #121212 !important;
+    border-color: #262626 !important;
+    color: #f5f5f5 !important;
+}
+
+.dark .shadow-sm,
+.dark .shadow-md,
+.dark .shadow-lg,
+.dark .shadow-xl {
+    box-shadow: none !important;
+}
+
+/* Navbars & Sidebars */
+.dark .sticky,
+.dark .fixed,
+.dark nav,
+.dark header {
+    background-color: #000000 !important;
+    border-bottom: 1px solid #262626 !important;
+}
