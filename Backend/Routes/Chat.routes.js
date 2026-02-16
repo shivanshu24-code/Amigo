@@ -14,6 +14,7 @@ import {
     leaveGroup,
     makeAdmin,
     removeAdmin,
+    clearChat,
 } from "../Controllers/Chat.controller.js";
 
 const router = express.Router();
@@ -52,6 +53,9 @@ router.post("/remove-admin/:conversationId/:userId", removeAdmin);
 
 // Mark messages as read in a conversation
 router.put("/read/:conversationId", markAsRead);
+
+// Clear message history for current user
+router.post("/clear/:conversationId", clearChat);
 
 // Delete a message
 router.post("/message/delete/:messageId", deleteMessage);

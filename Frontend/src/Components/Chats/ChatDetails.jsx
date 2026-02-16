@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { FiX, FiImage, FiUsers, FiShield, FiLogOut, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { FiX, FiImage, FiUsers, FiShield, FiLogOut, FiChevronDown, FiChevronUp, FiTrash2 } from 'react-icons/fi';
 import { useChatStore } from '../../Store/ChatStore';
 import { useAuthStore } from '../../Store/AuthStore';
 
 const ChatDetails = ({ friend, onClose }) => {
-    const { fetchSharedMedia, leaveGroup, makeAdmin, removeAdmin, conversations } = useChatStore();
+    const { fetchSharedMedia, leaveGroup, makeAdmin, removeAdmin, conversations, clearChat } = useChatStore();
     const { user } = useAuthStore();
     const [sharedMedia, setSharedMedia] = useState([]);
     const [mediaLoading, setMediaLoading] = useState(false);
     const [showMembers, setShowMembers] = useState(true);
     const [showMedia, setShowMedia] = useState(true);
     const [confirmLeave, setConfirmLeave] = useState(false);
+    const [confirmClear, setConfirmClear] = useState(false);
     const [actionLoading, setActionLoading] = useState(null); // tracks which member action is loading
 
     const isGroup = friend?.isGroup;
@@ -50,6 +51,21 @@ const ChatDetails = ({ friend, onClose }) => {
         const success = await leaveGroup(friend._id);
         if (success) {
             onClose();
+        }
+    };
+
+    const handleClearChat = async () => {
+        if (!conversationId) return;
+
+        setActionLoading('clearing');
+        const success = await clearChat(conversationId);
+        setActionLoading(null);
+
+        if (success) {
+            setConfirmClear(false);
+            onClose(); // Optional: close details panel after clearing
+        } else {
+            alert("Failed to clear chat");
         }
     };
 
@@ -238,6 +254,41 @@ const ChatDetails = ({ friend, onClose }) => {
                     )}
                 </div>
 
+                {/* Privacy & Support (Clear Chat) */}
+                <div className="p-4 border-b border-gray-100">
+                    {!confirmClear ? (
+                        <button
+                            onClick={() => setConfirmClear(true)}
+                            className="flex items-center gap-2 w-full px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium text-sm"
+                        >
+                            <FiTrash2 className="w-5 h-5" />
+                            Clear Recent Chat
+                        </button>
+                    ) : (
+                        <div className="bg-red-50 p-3 rounded-xl space-y-3">
+                            <p className="text-xs text-red-700 font-medium leading-relaxed">
+                                This will remove the chat history for you. Other participants will still be able to see the messages.
+                            </p>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleClearChat}
+                                    disabled={actionLoading === 'clearing'}
+                                    className="flex-1 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs font-bold disabled:opacity-50"
+                                >
+                                    {actionLoading === 'clearing' ? 'Clearing...' : 'Clear'}
+                                </button>
+                                <button
+                                    onClick={() => setConfirmClear(false)}
+                                    disabled={actionLoading === 'clearing'}
+                                    className="flex-1 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-xs font-bold"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 {/* Leave Group (group only) */}
                 {isGroup && (
                     <div className="p-4">
@@ -250,7 +301,7 @@ const ChatDetails = ({ friend, onClose }) => {
                                 Leave Group
                             </button>
                         ) : (
-                            <div className="space-y-2">
+                            <div className="space-y-2 pb-4">
                                 <p className="text-sm text-gray-600 px-1">Are you sure you want to leave this group?</p>
                                 <div className="flex gap-2">
                                     <button

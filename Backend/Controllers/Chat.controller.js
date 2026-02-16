@@ -921,3 +921,50 @@ export const removeAdmin = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
+
+/**
+ * Clear all messages in a conversation for the current user
+ * @route POST /api/chat/clear/:conversationId
+ */
+export const clearChat = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { conversationId } = req.params;
+
+        // Verify user is part of the conversation
+        const conversation = await Conversation.findOne({
+            _id: conversationId,
+            participants: userId,
+        });
+
+        if (!conversation) {
+            return res.status(404).json({
+                success: false,
+                message: "Conversation not found",
+            });
+        }
+
+        // Add userId to deletedBy array for all messages in this conversation
+        await Message.updateMany(
+            {
+                conversationId: conversationId,
+                deletedBy: { $ne: userId }
+            },
+            {
+                $addToSet: { deletedBy: userId }
+            }
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Chat cleared successfully",
+        });
+    } catch (error) {
+        console.error("Clear Chat Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while clearing chat",
+            error: error.message,
+        });
+    }
+};

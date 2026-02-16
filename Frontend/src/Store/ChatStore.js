@@ -390,6 +390,31 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    /* ===================== CLEAR CHAT ===================== */
+    clearChat: async (conversationId) => {
+        try {
+            const res = await api.post(`/chat/clear/${conversationId}`);
+            if (res.data.success) {
+                // If we cleared the currently active chat, empty the messages local state
+                const currentConvId = get().currentChat?.isGroup
+                    ? get().currentChat._id
+                    : get().currentChat?.conversationId;
+
+                if (conversationId === currentConvId || conversationId === get().currentChat?._id) {
+                    set({ messages: [] });
+                }
+
+                // Refresh conversations to update last message preview if needed
+                get().fetchConversations();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error("Failed to clear chat:", err);
+            return false;
+        }
+    },
+
     /* ===================== RESET STORE (on logout) ===================== */
     resetStore: () => {
         set({

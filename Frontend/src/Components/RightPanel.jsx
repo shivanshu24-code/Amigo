@@ -9,25 +9,34 @@ import { useAuthStore } from "../Store/AuthStore";
 
 const RightPanel = () => {
     const [events, setEvents] = useState([]);
+    const [newsItems, setNewsItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [modalType, setModalType] = useState("event"); // "event" or "news"
     const { user: authUser } = useAuthStore();
 
-    // Form State
-    const [newEvent, setNewEvent] = useState({
+    // Form State (Unified/Shared where possible)
+    const [formState, setFormState] = useState({
         title: "",
         date: "",
         time: "",
         location: "",
         type: "other",
-        color: "blue"
+        color: "blue",
+        headline: "", // News field
+        isNew: true   // News field
     });
 
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [editingEventId, setEditingEventId] = useState(null);
+    const [editingId, setEditingId] = useState(null);
 
     useEffect(() => {
-        fetchEvents();
+        const loadAllData = async () => {
+            setLoading(true);
+            await Promise.all([fetchEvents(), fetchNews()]);
+            setLoading(false);
+        };
+        loadAllData();
     }, []);
 
     const fetchEvents = async () => {
@@ -38,13 +47,23 @@ const RightPanel = () => {
             }
         } catch (error) {
             console.error("Error fetching events:", error);
-        } finally {
-            setLoading(false);
         }
     };
 
-    const handleEditClick = (event) => {
-        setNewEvent({
+    const fetchNews = async () => {
+        try {
+            const res = await api.get("/news");
+            if (res.data.success) {
+                setNewsItems(res.data.data);
+            }
+        } catch (error) {
+            console.error("Error fetching news:", error);
+        }
+    };
+
+    const handleEditEvent = (event) => {
+        setModalType("event");
+        setFormState({
             title: event.title,
             date: new Date(event.date).toISOString().split('T')[0],
             time: event.time,
@@ -52,34 +71,56 @@ const RightPanel = () => {
             type: event.type,
             color: event.color
         });
-        setEditingEventId(event._id);
+        setEditingId(event._id);
+        setShowAddModal(true);
+    };
+
+    const handleEditNews = (news) => {
+        setModalType("news");
+        setFormState({
+            headline: news.headline,
+            isNew: news.isNew
+        });
+        setEditingId(news._id);
         setShowAddModal(true);
     };
 
     const handleFormSubmit = async (e) => {
         e.preventDefault();
         setIsSubmitting(true);
-        console.log("Submitting Event Data:", newEvent);
         try {
-            if (editingEventId) {
-                // Update existing event
-                const res = await api.put(`/events/${editingEventId}`, newEvent);
-                if (res.data.success) {
-                    setEvents(prev => prev.map(ev => ev._id === editingEventId ? res.data.data : ev).sort((a, b) => new Date(a.date) - new Date(b.date)));
+            if (modalType === "event") {
+                if (editingId) {
+                    const res = await api.put(`/events/${editingId}`, formState);
+                    if (res.data.success) {
+                        setEvents(prev => prev.map(ev => ev._id === editingId ? res.data.data : ev).sort((a, b) => new Date(a.date) - new Date(b.date)));
+                    }
+                } else {
+                    const res = await api.post("/events/create", formState);
+                    if (res.data.success) {
+                        setEvents(prev => [...prev, res.data.data].sort((a, b) => new Date(a.date) - new Date(b.date)));
+                    }
                 }
             } else {
-                // Create new event
-                const res = await api.post("/events/create", newEvent);
-                if (res.data.success) {
-                    setEvents(prev => [...prev, res.data.data].sort((a, b) => new Date(a.date) - new Date(b.date)));
+                // News handling
+                if (editingId) {
+                    const res = await api.put(`/news/${editingId}`, formState);
+                    if (res.data.success) {
+                        setNewsItems(prev => prev.map(n => n._id === editingId ? res.data.data : n));
+                    }
+                } else {
+                    const res = await api.post("/news/create", formState);
+                    if (res.data.success) {
+                        setNewsItems(prev => [res.data.data, ...prev]);
+                    }
                 }
             }
             setShowAddModal(false);
-            setNewEvent({ title: "", date: "", time: "", location: "", type: "other", color: "blue" });
-            setEditingEventId(null);
+            setFormState({ title: "", date: "", time: "", location: "", type: "other", color: "blue", headline: "", isNew: true });
+            setEditingId(null);
         } catch (error) {
-            console.error("Error saving event:", error);
-            alert("Failed to save event");
+            console.error(`Error saving ${modalType}:`, error);
+            alert(`Failed to save ${modalType}`);
         } finally {
             setIsSubmitting(false);
         }
@@ -88,7 +129,6 @@ const RightPanel = () => {
     const handleDeleteEvent = async (e, id) => {
         e.stopPropagation();
         if (!window.confirm("Delete this event?")) return;
-
         try {
             const res = await api.delete(`/events/${id}`);
             if (res.data.success) {
@@ -100,6 +140,20 @@ const RightPanel = () => {
         }
     };
 
+    const handleDeleteNews = async (e, id) => {
+        e.stopPropagation();
+        if (!window.confirm("Delete this news?")) return;
+        try {
+            const res = await api.delete(`/news/${id}`);
+            if (res.data.success) {
+                setNewsItems(prev => prev.filter(n => n._id !== id));
+            }
+        } catch (error) {
+            console.error("Error deleting news:", error);
+            alert("Failed to delete news");
+        }
+    };
+
     const colorMap = {
         purple: "bg-purple-100 text-purple-600 border-purple-200",
         blue: "bg-blue-100 text-blue-600 border-blue-200",
@@ -108,32 +162,13 @@ const RightPanel = () => {
         orange: "bg-orange-100 text-orange-600 border-orange-200"
     };
 
-    const collegeNews = [
-        {
-            id: 1,
-            headline: "New AI Lab inaugurated",
-            time: "2 hours ago",
-            isNew: true
-        },
-        {
-            id: 2,
-            headline: "Placement drive starts next week",
-            time: "5 hours ago",
-            isNew: true
-        },
-        {
-            id: 3,
-            headline: "Sports week schedule announced",
-            time: "1 day ago",
-            isNew: false
-        },
-        {
-            id: 4,
-            headline: "Library timing extended",
-            time: "2 days ago",
-            isNew: false
-        }
-    ];
+    const formatNewsTime = (timestamp) => {
+        const diff = Date.now() - new Date(timestamp).getTime();
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        if (hours < 1) return "Just now";
+        if (hours < 24) return `${hours} hours ago`;
+        return `${Math.floor(hours / 24)} days ago`;
+    };
 
     return (
         <div className="hidden lg:flex flex-col w-[320px] bg-gray-50 border-l border-gray-100 sticky top-0 h-screen overflow-y-auto">
@@ -148,8 +183,9 @@ const RightPanel = () => {
                         </h3>
                         <button
                             onClick={() => {
-                                setNewEvent({ title: "", date: "", time: "", location: "", type: "other", color: "blue" });
-                                setEditingEventId(null);
+                                setModalType("event");
+                                setFormState({ title: "", date: "", time: "", location: "", type: "other", color: "blue", headline: "", isNew: true });
+                                setEditingId(null);
                                 setShowAddModal(true);
                             }}
                             className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-md font-medium hover:bg-purple-100 transition-colors flex items-center gap-1"
@@ -160,7 +196,7 @@ const RightPanel = () => {
 
                     <div className="divide-y divide-gray-50">
                         {loading ? (
-                            <div className="p-4 text-center text-gray-400 text-sm">Loading events...</div>
+                            <div className="p-4 text-center text-gray-400 text-sm animate-pulse">Loading events...</div>
                         ) : events.length === 0 ? (
                             <div className="p-4 text-center text-gray-400 text-sm">No upcoming events</div>
                         ) : (
@@ -190,28 +226,21 @@ const RightPanel = () => {
                                                 <MapPin className="w-3 h-3" />
                                                 <span className="truncate">{event.location}</span>
                                             </div>
-                                            <div className="flex items-center gap-1 mt-1">
-                                                <span className="text-[10px] text-gray-400">
-                                                    By {event.createdBy?.username || "Unknown"}
-                                                </span>
-                                            </div>
                                         </div>
                                     </div>
 
                                     {/* Action Buttons (Only for creator) */}
-                                    {authUser?._id?.toString() === event.createdBy?._id?.toString() && (
+                                    {authUser?._id === event.createdBy?._id && (
                                         <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); handleEditClick(event); }}
+                                                onClick={(e) => { e.stopPropagation(); handleEditEvent(event); }}
                                                 className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full"
-                                                title="Edit event"
                                             >
                                                 <FiEdit className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 onClick={(e) => handleDeleteEvent(e, event._id)}
                                                 className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full"
-                                                title="Delete event"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
                                             </button>
@@ -230,33 +259,65 @@ const RightPanel = () => {
                             <Newspaper className="w-4 h-4 text-blue-500" />
                             College News
                         </h3>
-                        {/* <button className="text-xs text-purple-600 font-medium hover:text-purple-700">
-                            See all
-                        </button> */}
+                        <button
+                            onClick={() => {
+                                setModalType("news");
+                                setFormState({ title: "", date: "", time: "", location: "", type: "other", color: "blue", headline: "", isNew: true });
+                                setEditingId(null);
+                                setShowAddModal(true);
+                            }}
+                            className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-md font-medium hover:bg-blue-100 transition-colors flex items-center gap-1"
+                        >
+                            <Plus className="w-3 h-3" /> Add
+                        </button>
                     </div>
 
                     <div className="divide-y divide-gray-50">
-                        {collegeNews.map((news) => (
-                            <div
-                                key={news.id}
-                                className="px-4 py-3 hover:bg-gray-50 transition cursor-pointer flex items-start gap-3"
-                            >
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        {news.isNew && (
-                                            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 rounded">
-                                                NEW
-                                            </span>
-                                        )}
-                                        <p className="text-sm text-gray-800 truncate font-medium">
-                                            {news.headline}
-                                        </p>
+                        {loading ? (
+                            <div className="p-4 text-center text-gray-400 text-sm animate-pulse">Loading news...</div>
+                        ) : newsItems.length === 0 ? (
+                            <div className="p-4 text-center text-gray-400 text-sm">No updates yet</div>
+                        ) : (
+                            newsItems.map((news) => (
+                                <div
+                                    key={news._id}
+                                    className="px-4 py-3 hover:bg-gray-50 transition cursor-pointer flex items-start gap-3 group relative"
+                                >
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            {news.isNew && (
+                                                <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 rounded">
+                                                    NEW
+                                                </span>
+                                            )}
+                                            <p className="text-sm text-gray-800 truncate font-medium">
+                                                {news.headline}
+                                            </p>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1">{formatNewsTime(news.createdAt)}</p>
                                     </div>
-                                    <p className="text-xs text-gray-400 mt-1">{news.time}</p>
+
+                                    {/* News Actions */}
+                                    {authUser?._id === news.createdBy?._id && (
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleEditNews(news); }}
+                                                className="p-1 text-gray-400 hover:text-blue-500"
+                                            >
+                                                <FiEdit className="w-3 h-3" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => handleDeleteNews(e, news._id)}
+                                                className="p-1 text-gray-400 hover:text-red-500"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    )}
+                                    <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />
                                 </div>
-                                <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />
-                            </div>
-                        ))}
+                            ))
+                        )}
                     </div>
                 </div>
 
@@ -273,99 +334,127 @@ const RightPanel = () => {
                 <p className="text-xs text-gray-300 px-2">© 2026 Amigo</p>
             </div>
 
-            {/* Add/Edit Event Modal */}
+            {/* Add/Edit Modal */}
             {showAddModal && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scale-up">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-gray-900">
-                                {editingEventId ? "Edit Event" : "Add New Event"}
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl animate-scale-up">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-gray-900">
+                                {editingId ? "Edit" : "Add"} {modalType === "event" ? "Event" : "College News"}
                             </h3>
-                            <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
-                                <X className="w-5 h-5" />
+                            <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
                             </button>
                         </div>
                         <form onSubmit={handleFormSubmit} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Event Title</label>
-                                <input
-                                    type="text"
-                                    required
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
-                                    placeholder="e.g. Tech Fest 2026"
-                                    value={newEvent.title}
-                                    onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                                    <input
-                                        type="date"
-                                        required
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
-                                        value={newEvent.date}
-                                        onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                                    <input
-                                        type="time"
-                                        required
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
-                                        value={newEvent.time}
-                                        onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                                <input
-                                    type="text"
-                                    required
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
-                                    placeholder="e.g. Main Auditorium"
-                                    value={newEvent.location}
-                                    onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                                    <select
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
-                                        value={newEvent.type}
-                                        onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value })}
-                                    >
-                                        <option value="other">Other</option>
-                                        <option value="festival">Festival</option>
-                                        <option value="competition">Competition</option>
-                                        <option value="cultural">Cultural</option>
-                                        <option value="academic">Academic</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Color Theme</label>
-                                    <select
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
-                                        value={newEvent.color}
-                                        onChange={(e) => setNewEvent({ ...newEvent, color: e.target.value })}
-                                    >
-                                        <option value="blue">Blue</option>
-                                        <option value="purple">Purple</option>
-                                        <option value="pink">Pink</option>
-                                        <option value="green">Green</option>
-                                        <option value="orange">Orange</option>
-                                    </select>
-                                </div>
-                            </div>
+                            {modalType === "event" ? (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Event Title</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
+                                            placeholder="e.g. Tech Fest 2026"
+                                            value={formState.title}
+                                            onChange={(e) => setFormState({ ...formState, title: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Date</label>
+                                            <input
+                                                type="date"
+                                                required
+                                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
+                                                value={formState.date}
+                                                onChange={(e) => setFormState({ ...formState, date: e.target.value })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Time</label>
+                                            <input
+                                                type="time"
+                                                required
+                                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
+                                                value={formState.time}
+                                                onChange={(e) => setFormState({ ...formState, time: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Location</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all"
+                                            placeholder="e.g. Main Auditorium"
+                                            value={formState.location}
+                                            onChange={(e) => setFormState({ ...formState, location: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Type</label>
+                                            <select
+                                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all cursor-pointer"
+                                                value={formState.type}
+                                                onChange={(e) => setFormState({ ...formState, type: e.target.value })}
+                                            >
+                                                <option value="other">Other</option>
+                                                <option value="festival">Festival</option>
+                                                <option value="competition">Competition</option>
+                                                <option value="cultural">Cultural</option>
+                                                <option value="academic">Academic</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Color Theme</label>
+                                            <select
+                                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-200 focus:border-purple-500 outline-none transition-all cursor-pointer"
+                                                value={formState.color}
+                                                onChange={(e) => setFormState({ ...formState, color: e.target.value })}
+                                            >
+                                                <option value="blue">Blue</option>
+                                                <option value="purple">Purple</option>
+                                                <option value="pink">Pink</option>
+                                                <option value="green">Green</option>
+                                                <option value="orange">Orange</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Headline</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-500 outline-none transition-all"
+                                            placeholder="e.g. Placement drive starts next week"
+                                            value={formState.headline}
+                                            onChange={(e) => setFormState({ ...formState, headline: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2 py-2">
+                                        <input
+                                            type="checkbox"
+                                            id="isNew"
+                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                            checked={formState.isNew}
+                                            onChange={(e) => setFormState({ ...formState, isNew: e.target.checked })}
+                                        />
+                                        <label htmlFor="isNew" className="text-sm font-medium text-gray-700 cursor-pointer">Mark as "NEW"</label>
+                                    </div>
+                                </>
+                            )}
                             <button
                                 type="submit"
                                 disabled={isSubmitting}
-                                className="w-full bg-purple-600 text-white py-2.5 rounded-lg font-semibold hover:bg-purple-700 transition-colors disabled:opacity-50"
+                                className={`w-full ${modalType === 'event' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} text-white py-3 rounded-xl font-bold transition-all shadow-lg hover:shadow-xl disabled:opacity-50 mt-4 active:scale-[0.98]`}
                             >
-                                {isSubmitting ? (editingEventId ? "Saving..." : "Adding...") : (editingEventId ? "Save Changes" : "Add Event")}
+                                {isSubmitting ? "Saving..." : (editingId ? "Save Changes" : `Add ${modalType === 'event' ? 'Event' : 'News'}`)}
                             </button>
                         </form>
                     </div>
