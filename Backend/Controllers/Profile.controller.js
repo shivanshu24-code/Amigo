@@ -16,7 +16,7 @@ export const createProfile = async (req, res) => {
       interest,
       username,
     } = req.body;
-                            
+
     // 🔒 Username required
     if (!username) {
       return res.status(400).json({ message: "Username is required" });
@@ -101,7 +101,7 @@ export const getMyProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { username, avatar, ...otherUpdates } = req.body;
+    const { username, avatar, publicKey, ...otherUpdates } = req.body;
 
     // 1. Handle User updates (username, avatar)
     const userUpdates = {};
@@ -117,6 +117,10 @@ export const updateProfile = async (req, res) => {
 
     if (avatar) {
       userUpdates.avatar = avatar;
+    }
+
+    if (publicKey) {
+      userUpdates.publicKey = publicKey;
     }
 
     // Update User model if there are changes

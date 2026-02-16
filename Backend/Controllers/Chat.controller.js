@@ -39,7 +39,7 @@ export const sendMessage = async (req, res) => {
     try {
         const senderId = req.user._id;
         const targetId = req.params.userId; // This can be a userId or conversationId for groups
-        const { text, isStoryReply, sharedStory, conversationId } = req.body;
+        const { text, isStoryReply, sharedStory, conversationId, encryptedKey, encryptionIV } = req.body;
 
         // Validate input
         if ((!text || !text.trim()) && !sharedStory) {
@@ -86,6 +86,8 @@ export const sendMessage = async (req, res) => {
             text: text?.trim(),
             isStoryReply: isStoryReply || false,
             sharedStory: sharedStory || undefined,
+            encryptedKey,
+            encryptionIV,
         });
 
         // Update conversation with last message
@@ -152,7 +154,7 @@ export const getConversations = async (req, res) => {
                     { path: "sender", select: "username" }
                 ]
             })
-            .populate("participants", "username avatar")
+            .populate("participants", "username avatar publicKey")
             .populate("groupAdmin", "username avatar")
             .sort({ updatedAt: -1 });
 
@@ -200,6 +202,7 @@ export const getConversations = async (req, res) => {
                         _id: otherUser._id,
                         username: otherUser.username,
                         avatar: profile?.avatar || otherUser.avatar,
+                        publicKey: otherUser.publicKey,
                         firstname: profile?.firstname,
                         lastname: profile?.lastname
                     },

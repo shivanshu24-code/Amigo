@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useProfileStore } from '../Store/ProfileStore.js';
 import { usePostStore } from '../Store/PostStore.js';
 import { useFriendStore } from '../Store/FriendStore.js';
-import { BadgeCheck, Grid3X3, Bookmark, Heart, ArrowLeft } from "lucide-react";
+import { BadgeCheck, Grid3X3, Bookmark, Heart, ArrowLeft, MessageCircle } from "lucide-react";
 
 import ProfileSkeleton from '../Components/ProfileSkeleton.jsx';
 import Avatar from '../Components/Avatar.jsx';

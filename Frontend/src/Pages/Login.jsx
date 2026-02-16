@@ -142,7 +142,7 @@ const Login = () => {
 
       {/* Footer */}
       <div className="absolute bottom-4 left-0 right-0 text-center text-white/40 text-xs z-10">
-        © 2024 Amigo. Made with ❤️
+        © 2026 Amigo. Made with ❤️
       </div>
     </div>
   );

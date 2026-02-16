@@ -43,6 +43,12 @@ const messageSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    encryptedKey: {
+        type: String, // AES key encrypted with recipient's public key
+    },
+    encryptionIV: {
+        type: String, // IV for AES decryption
+    }
 }, { timestamps: true });
 
 // Custom validation: either text or sharedPost or sharedStory must be present

@@ -134,9 +134,18 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
             onClick={() => !friend.isGroup && navigate(`/profile/${friend._id}`)}
             className={!friend.isGroup ? 'cursor-pointer' : ''}
           >
-            <h1 className="font-semibold text-gray-900 hover:text-indigo-600 transition-colors">
-              {friend.isGroup ? friend.groupName : friend.username}
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="font-semibold text-gray-900 hover:text-indigo-600 transition-colors">
+                {friend.isGroup ? friend.groupName : friend.username}
+              </h1>
+              {!friend.isGroup && friend.publicKey && (
+                <span title="End-to-End Encrypted" className="text-green-500">
+                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                  </svg>
+                </span>
+              )}
+            </div>
             {friend.isGroup ? (
               <p className="text-sm text-gray-500">{friend.participants?.length || 0} members</p>
             ) : isTyping ? (
@@ -165,7 +174,21 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
       </div>
 
       {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-4">
+      <div className="flex-1 overflow-y-auto px-3 py-4 relative">
+        {/* Floating Encryption Banner - Always at top of scroll area if peer is E2EE enabled */}
+        {!friend.isGroup && friend.publicKey && (
+          <div className="sticky top-0 z-20 flex justify-center mb-6 pointer-events-none -mx-3">
+            <div className="bg-white/70 backdrop-blur-md border border-white/50 px-4 py-1.5 rounded-full shadow-sm text-center max-w-xs pointer-events-auto">
+              <p className="text-[10px] text-gray-500 font-semibold flex items-center justify-center gap-1.5 uppercase tracking-wider">
+                <svg className="w-3 h-3 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                </svg>
+                End-to-End Encrypted
+              </p>
+            </div>
+          </div>
+        )}
+
         {messagesLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -203,6 +226,7 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
                     isDeletedForEveryone={msg.isDeletedForEveryone}
                     isStoryReply={msg.isStoryReply}
                     sharedStory={msg.sharedStory}
+                    isEncrypted={msg.isEncrypted}
                   />
                 </React.Fragment>
               );

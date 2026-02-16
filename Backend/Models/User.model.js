@@ -37,6 +37,10 @@ const userschema = new mongoose.Schema({
     savedPosts: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: "Post"
-    }]
+    }],
+    publicKey: {
+        type: String,
+        default: null
+    }
 }, { timestamps: true })
 export default mongoose.model("User", userschema)

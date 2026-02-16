@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import api from "../Services/Api.js";
 import { getSocket } from "../Socket/Socket.js";
+import { encryptMessage, decryptMessage, importPublicKey } from "../Utils/CryptoUtils.js";
+import { useAuthStore } from "./AuthStore.js";
 
 export const useChatStore = create((set, get) => ({
     /* ===================== STATE ===================== */
@@ -51,7 +53,23 @@ export const useChatStore = create((set, get) => ({
                 ? `/chat/messages/v/${id}`
                 : `/chat/messages/${id}`;
             const res = await api.get(url);
-            set({ messages: res.data.data, messagesLoading: false });
+            let fetchedMessages = res.data.data;
+
+            // Decrypt messages if 1-on-1 and encrypted
+            if (!isGroup) {
+                const { privateKey } = useAuthStore.getState();
+                if (privateKey) {
+                    fetchedMessages = await Promise.all(fetchedMessages.map(async (msg) => {
+                        if (msg.encryptedKey && msg.encryptionIV && msg.text) {
+                            const decrypted = await decryptMessage(msg.text, msg.encryptedKey, msg.encryptionIV, privateKey);
+                            return { ...msg, text: decrypted, isEncrypted: true };
+                        }
+                        return msg;
+                    }));
+                }
+            }
+
+            set({ messages: fetchedMessages, messagesLoading: false });
         } catch (err) {
             set({
                 messagesLoading: false,
@@ -83,12 +101,27 @@ export const useChatStore = create((set, get) => ({
             const payload = { text };
             if (currentChat.isGroup) {
                 payload.conversationId = currentChat._id;
+            } else {
+                // E2EE for 1-on-1
+                const friend = currentChat.friend || currentChat;
+                if (friend.publicKey) {
+                    try {
+                        const publicKey = await importPublicKey(friend.publicKey);
+                        const encrypted = await encryptMessage(text.trim(), publicKey);
+
+                        payload.text = encrypted.cipherText;
+                        payload.encryptedKey = encrypted.encryptedKey;
+                        payload.encryptionIV = encrypted.iv;
+                    } catch (cryptoErr) {
+                        console.error("Encryption failed, sending as plain text:", cryptoErr);
+                    }
+                }
             }
 
             // For 1-on-1: send to friend's user ID; for group: send to conversation ID
             const sendToId = currentChat._id;
             const res = await api.post(`/chat/send/${sendToId}`, payload);
-            const newMessage = res.data.data;
+            const newMessage = { ...res.data.data, text: text.trim() }; // Keep decrypted text for UI
 
             // Replace optimistic message with real one
             set((state) => ({
@@ -136,20 +169,30 @@ export const useChatStore = create((set, get) => ({
     },
 
     /* ===================== RECEIVE NEW MESSAGE ===================== */
-    receiveMessage: (messageData) => {
+    receiveMessage: async (messageData) => {
         const { currentChat } = get();
+        let message = messageData.message;
+
+        // Decrypt if encrypted and not group
+        if (!messageData.isGroup && message.encryptedKey && message.encryptionIV) {
+            const { privateKey } = useAuthStore.getState();
+            if (privateKey) {
+                const decrypted = await decryptMessage(message.text, message.encryptedKey, message.encryptionIV, privateKey);
+                message = { ...message, text: decrypted, isEncrypted: true };
+            }
+        }
 
         // Check if message belongs to the current chat
         // For 1-on-1: currentChat has conversationId; for groups: currentChat._id is the conversation ID
         const currentConvId = currentChat?.isGroup ? currentChat._id : currentChat?.conversationId;
         if (currentChat && messageData.conversationId && messageData.conversationId === currentConvId) {
             set((state) => ({
-                messages: [...state.messages, messageData.message],
+                messages: [...state.messages, message],
             }));
         }
 
         // Update conversation list silently
-        get().updateConversationWithMessage(messageData.message);
+        get().updateConversationWithMessage(message);
     },
 
     /* ===================== MESSAGE SENT CONFIRMATION (Socket) ===================== */

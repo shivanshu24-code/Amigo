@@ -8,6 +8,12 @@ import {
 } from "../Services/Auth.api.js";
 import api from "../Services/Api.js";
 import { connectSocket, disconnectSocket } from "../Socket/Socket.js";
+import {
+  generateRSAKeyPair,
+  exportPublicKey,
+  exportPrivateKey,
+  importPrivateKey
+} from "../Utils/CryptoUtils.js";
 
 export const useAuthStore = create(
   persist(
@@ -20,6 +26,36 @@ export const useAuthStore = create(
       error: null,
       signupEmail: null,
       authChecked: false,
+      privateKey: null, // CryptoKey object
+      e2eeEnabled: false,
+
+      /* ===================== E2EE KEY MANAGEMENT ===================== */
+      setupKeys: async () => {
+        const storedPrivateKey = localStorage.getItem("e2ee_private_key");
+
+        try {
+          if (storedPrivateKey) {
+            // Import existing private key
+            const key = await importPrivateKey(storedPrivateKey);
+            set({ privateKey: key, e2eeEnabled: true });
+          } else {
+            // Generate new key pair
+            const keyPair = await generateRSAKeyPair();
+            const privateKeyB64 = await exportPrivateKey(keyPair.privateKey);
+            const publicKeyB64 = await exportPublicKey(keyPair.publicKey);
+
+            localStorage.setItem("e2ee_private_key", privateKeyB64);
+
+            // Upload public key to server
+            await api.put("/profile", { publicKey: publicKeyB64 });
+
+            set({ privateKey: keyPair.privateKey, e2eeEnabled: true });
+          }
+        } catch (err) {
+          console.error("E2EE Setup Error:", err);
+          set({ e2eeEnabled: false });
+        }
+      },
 
       /* ===================== SIGNUP ===================== */
       signup: async (email) => {
@@ -84,6 +120,7 @@ export const useAuthStore = create(
           });
 
           connectSocket?.(data.user._id);
+          await get().setupKeys();
 
           return true;
         } catch (err) {
@@ -121,6 +158,7 @@ export const useAuthStore = create(
           });
 
           connectSocket?.(res.user._id);
+          await get().setupKeys();
         } catch (err) {
           localStorage.removeItem("token");
           set({
@@ -190,7 +228,7 @@ export const useAuthStore = create(
     }),
     {
       name: "auth-store",
-       partialize: (state) => ({
+      partialize: (state) => ({
         isAuthenticated: state.isAuthenticated,
       }),
     }

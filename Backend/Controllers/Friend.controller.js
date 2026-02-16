@@ -290,7 +290,8 @@ export const getFriendRequests = async (req, res) => {
                         email: "$sender.email",
                         avatar: { $ifNull: ["$senderProfile.avatar", "$sender.avatar"] },
                         firstname: "$senderProfile.firstname",
-                        lastname: "$senderProfile.lastname"
+                        lastname: "$senderProfile.lastname",
+                        publicKey: "$sender.publicKey"
                     }
                 }
             }
@@ -368,7 +369,8 @@ export const getFriends = async (req, res) => {
                     avatar: { $ifNull: ["$profile.avatar", "$friend.avatar"] },
                     firstname: "$profile.firstname",
                     lastname: "$profile.lastname",
-                    isVerified: "$friend.isVerified"
+                    isVerified: "$friend.isVerified",
+                    publicKey: "$friend.publicKey"
                 }
             }
         ]);
@@ -482,7 +484,8 @@ export const getSentRequests = async (req, res) => {
                         email: "$receiver.email",
                         avatar: { $ifNull: ["$receiverProfile.avatar", "$receiver.avatar"] },
                         firstname: "$receiverProfile.firstname",
-                        lastname: "$receiverProfile.lastname"
+                        lastname: "$receiverProfile.lastname",
+                        publicKey: "$receiver.publicKey"
                     }
                 }
             }
