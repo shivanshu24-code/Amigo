@@ -32,14 +32,14 @@ const getOrCreateConversation = async (userId1, userId2) => {
 };
 
 /**
- * Send a message to a friend
- * @route POST /api/chat/send/:userId
+ * Send a message to a friend or group
+ * @route POST /api/chat/send/:id
  */
 export const sendMessage = async (req, res) => {
     try {
         const senderId = req.user._id;
-        const receiverId = req.params.userId;
-        const { text, isStoryReply, sharedStory } = req.body;
+        const targetId = req.params.userId; // This can be a userId or conversationId for groups
+        const { text, isStoryReply, sharedStory, conversationId } = req.body;
 
         // Validate input
         if ((!text || !text.trim()) && !sharedStory) {
@@ -49,31 +49,39 @@ export const sendMessage = async (req, res) => {
             });
         }
 
-        // Check if receiver exists
-        const receiver = await User.findById(receiverId);
-        if (!receiver) {
+        let conversation;
+        let receiverId = null;
+
+        if (conversationId) {
+            // If conversationId is provided, it's either an existing 1-on-1 or a group
+            conversation = await Conversation.findOne({
+                _id: conversationId,
+                participants: senderId,
+            });
+        } else {
+            // Legacy support or fallback to find/create 1-on-1
+            receiverId = targetId;
+            const receiver = await User.findById(receiverId);
+            if (!receiver) {
+                return res.status(404).json({
+                    success: false,
+                    message: "User not found",
+                });
+            }
+            conversation = await getOrCreateConversation(senderId, receiverId);
+        }
+
+        if (!conversation) {
             return res.status(404).json({
                 success: false,
-                message: "User not found",
+                message: "Conversation not found",
             });
         }
-
-        // Check if they are friends
-        const friendshipValid = await areFriends(senderId, receiverId);
-        if (!friendshipValid) {
-            return res.status(403).json({
-                success: false,
-                message: "You can only send messages to friends",
-            });
-        }
-
-        // Get or create conversation
-        const conversation = await getOrCreateConversation(senderId, receiverId);
 
         // Create message
         const message = await Message.create({
             sender: senderId,
-            receiver: receiverId,
+            receiver: conversation.isGroup ? undefined : (receiverId || conversation.participants.find(p => p.toString() !== senderId.toString())),
             conversationId: conversation._id,
             text: text?.trim(),
             isStoryReply: isStoryReply || false,
@@ -87,20 +95,27 @@ export const sendMessage = async (req, res) => {
         // Populate sender info for the response
         await message.populate("sender", "username avatar");
 
-        // Emit real-time event to receiver
-        emitToUser(receiverId, "new-message", {
-            message: {
-                _id: message._id,
-                text: message.text,
-                sender: message.sender,
-                receiver: receiverId,
+        // Emit real-time event
+        if (conversation.isGroup) {
+            // For groups, emit to all participants except sender
+            const otherParticipants = conversation.participants.filter(p => p.toString() !== senderId.toString());
+            const emitData = {
+                message: message,
                 conversationId: conversation._id,
-                isStoryReply: message.isStoryReply,
-                sharedStory: message.sharedStory,
-                createdAt: message.createdAt,
-            },
-            conversationId: conversation._id,
-        });
+            };
+
+            // We need a way to emit to multiple users
+            // Using a helper from SocketManager
+            const { emitToUsers } = await import("../Socket/SocketManager.js");
+            emitToUsers(otherParticipants, "new-message", emitData);
+        } else {
+            // For 1-on-1
+            const otherParticipantId = conversation.participants.find(p => p.toString() !== senderId.toString());
+            emitToUser(otherParticipantId, "new-message", {
+                message: message,
+                conversationId: conversation._id,
+            });
+        }
 
         res.status(201).json({
             success: true,
@@ -125,93 +140,74 @@ export const getConversations = async (req, res) => {
     try {
         const userId = req.user._id;
 
-        // 1. Fetch conversations with basic population
+        // Fetch conversations
         const conversations = await Conversation.find({
             participants: userId,
         })
             .populate({
                 path: "lastMessage",
                 populate: [
-                    {
-                        path: "sharedPost",
-                        select: "_id caption media author"
-                    },
-                    {
-                        path: "sharedStory",
-                        select: "_id media author"
-                    }
+                    { path: "sharedPost", select: "_id caption media author" },
+                    { path: "sharedStory", select: "_id media author" },
+                    { path: "sender", select: "username" }
                 ]
             })
+            .populate("participants", "username avatar")
+            .populate("groupAdmin", "username avatar")
             .sort({ updatedAt: -1 });
 
-        // 2. Extract all other participant IDs
-        const otherUserIds = new Set();
+        // Fetch user profiles for enhanced details (avatars)
+        const participantsIds = new Set();
         conversations.forEach(conv => {
-            const otherId = conv.participants.find(p => p.toString() !== userId.toString());
-            if (otherId) otherUserIds.add(otherId);
+            conv.participants.forEach(p => participantsIds.add(p._id.toString()));
         });
 
-        // 3. Fetch enhanced details for these users (User + Profile)
-        const enhancedUsers = await User.aggregate([
-            {
-                $match: {
-                    _id: { $in: Array.from(otherUserIds) }
-                }
-            },
-            {
-                $lookup: {
-                    from: "profiles",
-                    localField: "_id",
-                    foreignField: "user",
-                    as: "profile"
-                }
-            },
-            {
-                $unwind: {
-                    path: "$profile",
-                    preserveNullAndEmptyArrays: true
-                }
-            },
-            {
-                $project: {
-                    _id: 1,
-                    username: 1,
-                    email: 1,
-                    avatar: { $ifNull: ["$profile.avatar", "$avatar"] },
-                    firstname: "$profile.firstname",
-                    lastname: "$profile.lastname",
-                    isVerified: 1
-                }
-            }
-        ]);
+        const profiles = await (await import("../Models/Profile.model.js")).default.find({
+            user: { $in: Array.from(participantsIds) }
+        }).select("user avatar firstname lastname");
 
-        // Create a map for quick lookup
-        const userMap = new Map();
-        enhancedUsers.forEach(u => userMap.set(u._id.toString(), u));
+        const profileMap = new Map();
+        profiles.forEach(p => profileMap.set(p.user.toString(), p));
 
-        // 4. Map back to conversations
+        // Format conversations
         const formattedConversations = conversations.map(conv => {
-            const otherId = conv.participants.find(p => p.toString() !== userId.toString());
-            const friendDetails = userMap.get(otherId?.toString()) || null;
-
-            // If for some reason user not found (deleted?), handle gracefully
-            if (!friendDetails && otherId) {
-                // Return basic structure if enhanced fetch failed for this user
+            if (conv.isGroup) {
                 return {
                     _id: conv._id,
-                    friend: { _id: otherId, username: "Unknown User" },
+                    isGroup: true,
+                    groupName: conv.groupName,
+                    groupAvatar: conv.groupAvatar,
+                    // Ensure groupAdmin is an array for legacy data
+                    groupAdmin: Array.isArray(conv.groupAdmin)
+                        ? conv.groupAdmin
+                        : (conv.groupAdmin ? [conv.groupAdmin] : []),
+                    lastMessage: conv.lastMessage,
+                    updatedAt: conv.updatedAt,
+                    participants: conv.participants.map(p => ({
+                        ...p._doc,
+                        avatar: profileMap.get(p._id.toString())?.avatar || p.avatar
+                    }))
+                };
+            } else {
+                const otherUser = conv.participants.find(p => p._id.toString() !== userId.toString());
+                if (!otherUser) return null;
+
+                const profile = profileMap.get(otherUser._id.toString());
+                return {
+                    _id: conv._id,
+                    isGroup: false,
+                    friend: {
+                        _id: otherUser._id,
+                        username: otherUser.username,
+                        avatar: profile?.avatar || otherUser.avatar,
+                        firstname: profile?.firstname,
+                        lastname: profile?.lastname
+                    },
                     lastMessage: conv.lastMessage,
                     updatedAt: conv.updatedAt,
                 };
             }
-
-            return {
-                _id: conv._id,
-                friend: friendDetails,
-                lastMessage: conv.lastMessage,
-                updatedAt: conv.updatedAt,
-            };
-        }).filter(c => c.friend); // Remove invalid ones
+        }).filter(c => c !== null);
 
         res.status(200).json({
             success: true,
@@ -229,6 +225,57 @@ export const getConversations = async (req, res) => {
 };
 
 /**
+ * Create a new group conversation
+ * @route POST /api/chat/create-group
+ */
+export const createGroup = async (req, res) => {
+    try {
+        const { name, participants } = req.body;
+        const adminId = req.user._id;
+
+        if (!name || !participants || participants.length < 1) {
+            return res.status(400).json({
+                success: false,
+                message: "Group name and at least one participant are required",
+            });
+        }
+
+        // Include admin in participants if not already there
+        const allParticipants = [...new Set([...participants, adminId.toString()])];
+
+        const conversation = await Conversation.create({
+            isGroup: true,
+            groupName: name.trim(),
+            groupAdmin: [adminId],
+            participants: allParticipants,
+        });
+
+        // Add a welcome message
+        const welcomeMessage = await Message.create({
+            sender: adminId,
+            conversationId: conversation._id,
+            text: `Created group "${name}"`,
+        });
+
+        conversation.lastMessage = welcomeMessage._id;
+        await conversation.save();
+
+        res.status(201).json({
+            success: true,
+            message: "Group created successfully",
+            data: conversation,
+        });
+    } catch (error) {
+        console.error("Create Group Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while creating group",
+            error: error.message,
+        });
+    }
+};
+
+/**
  * Get messages with a specific friend
  * @route GET /api/chat/messages/:friendId
  */
@@ -238,23 +285,25 @@ export const getMessages = async (req, res) => {
         const friendId = req.params.friendId;
         const { page = 1, limit = 50 } = req.query;
 
-        // Find conversation first
-        const participants = [userId, friendId].sort();
-        const conversation = await Conversation.findOne({
-            participants: { $all: participants, $size: 2 }
-        });
+        const conversationId = req.params.conversationId;
 
-        // If no conversation exists AND they are not friends, deny access
+        let conversation;
+
+        if (conversationId) {
+            // Route: /messages/v/:conversationId — direct lookup by conversation ID
+            conversation = await Conversation.findOne({
+                _id: conversationId,
+                participants: userId,
+            });
+        } else if (friendId) {
+            // Route: /messages/:friendId — find 1-on-1 conversation with this friend
+            conversation = await Conversation.findOne({
+                participants: { $all: [userId, friendId] },
+                isGroup: { $ne: true },
+            });
+        }
+
         if (!conversation) {
-            const friendshipValid = await areFriends(userId, friendId);
-            if (!friendshipValid) {
-                return res.status(200).json({ // Return empty instead of 403 to prevent UI error
-                    success: true,
-                    count: 0,
-                    data: [],
-                });
-            }
-
             return res.status(200).json({
                 success: true,
                 count: 0,
@@ -262,34 +311,43 @@ export const getMessages = async (req, res) => {
             });
         }
 
-        // Get messages with pagination
+        return getMessagesWithConv(conversation._id, userId, page, limit, res);
+    } catch (error) {
+        console.error("Get Messages Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while fetching messages",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * Helper to fetch messages by conversation ID
+ */
+const getMessagesWithConv = async (conversationId, userId, page, limit, res) => {
+    try {
         const messages = await Message.find({
-            conversationId: conversation._id,
-            deletedBy: { $ne: userId }, // Exclude messages deleted by the user
+            conversationId: conversationId,
+            deletedBy: { $ne: userId },
         })
             .populate("sender", "username avatar")
             .populate({
                 path: "sharedPost",
-                populate: {
-                    path: "author",
-                    select: "username avatar"
-                }
+                populate: { path: "author", select: "username avatar" }
             })
             .populate({
                 path: "sharedStory",
-                populate: {
-                    path: "author",
-                    select: "username avatar"
-                }
+                populate: { path: "author", select: "username avatar" }
             })
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(parseInt(limit));
 
-        // Mark unread messages as read
+        // Mark unread messages as read (for 1-on-1 mostly, or current user in group)
         await Message.updateMany(
             {
-                conversationId: conversation._id,
+                conversationId: conversationId,
                 receiver: userId,
                 read: false,
                 deletedBy: { $ne: userId }
@@ -300,16 +358,11 @@ export const getMessages = async (req, res) => {
         res.status(200).json({
             success: true,
             count: messages.length,
-            conversationId: conversation._id,
-            data: messages.reverse(), // Return in chronological order
+            conversationId: conversationId,
+            data: messages.reverse(),
         });
-    } catch (error) {
-        console.error("Get Messages Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Server error while fetching messages",
-            error: error.message,
-        });
+    } catch (err) {
+        throw err;
     }
 };
 
@@ -649,3 +702,219 @@ export const shareStoryToFriend = async (req, res) => {
 };
 
 
+/**
+ * Get shared media for a conversation
+ * @route GET /api/chat/media/:conversationId
+ */
+export const getSharedMedia = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { conversationId } = req.params;
+
+        // Verify user is in the conversation
+        const conversation = await Conversation.findOne({
+            _id: conversationId,
+            participants: userId,
+        });
+        if (!conversation) {
+            return res.status(404).json({ success: false, message: "Conversation not found" });
+        }
+
+        // Find messages with shared posts that have media
+        const messages = await Message.find({
+            conversationId,
+            sharedPost: { $exists: true, $ne: null },
+            deletedBy: { $ne: userId },
+            isDeletedForEveryone: { $ne: true },
+        })
+            .populate({
+                path: "sharedPost",
+                select: "media caption author",
+                populate: { path: "author", select: "username avatar" },
+            })
+            .sort({ createdAt: -1 })
+            .limit(50);
+
+        const media = messages
+            .filter(m => m.sharedPost?.media)
+            .map(m => ({
+                _id: m._id,
+                media: m.sharedPost.media,
+                caption: m.sharedPost.caption,
+                author: m.sharedPost.author,
+                postId: m.sharedPost._id,
+                sentAt: m.createdAt,
+            }));
+
+        res.status(200).json({ success: true, count: media.length, data: media });
+    } catch (error) {
+        console.error("Get Shared Media Error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
+/**
+ * Leave a group conversation
+ * @route POST /api/chat/leave-group/:conversationId
+ */
+export const leaveGroup = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { conversationId } = req.params;
+
+        const conversation = await Conversation.findOne({
+            _id: conversationId,
+            participants: userId,
+            isGroup: true,
+        });
+
+        if (!conversation) {
+            return res.status(404).json({ success: false, message: "Group not found" });
+        }
+
+        // Ensure groupAdmin is an array (handle legacy data)
+        if (!Array.isArray(conversation.groupAdmin)) {
+            conversation.groupAdmin = conversation.groupAdmin ? [conversation.groupAdmin] : [];
+        }
+
+        // Remove user from participants
+        conversation.participants = conversation.participants.filter(
+            p => p.toString() !== userId.toString()
+        );
+
+        // Remove from admin list if they were admin
+        conversation.groupAdmin = conversation.groupAdmin.filter(
+            a => a.toString() !== userId.toString()
+        );
+
+        // If no admins left but still has participants, promote the first participant
+        if (conversation.groupAdmin.length === 0 && conversation.participants.length > 0) {
+            conversation.groupAdmin.push(conversation.participants[0]);
+        }
+
+        // If no participants left, delete the conversation
+        if (conversation.participants.length === 0) {
+            await Conversation.findByIdAndDelete(conversationId);
+            return res.status(200).json({ success: true, message: "Group deleted (no members left)" });
+        }
+
+        await conversation.save();
+
+        // Add a system message
+        const leaveMsg = await Message.create({
+            sender: userId,
+            conversationId: conversation._id,
+            text: `left the group`,
+        });
+        conversation.lastMessage = leaveMsg._id;
+        await conversation.save();
+
+        res.status(200).json({ success: true, message: "Left group successfully" });
+    } catch (error) {
+        console.error("Leave Group Error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
+/**
+ * Make a user admin
+ * @route POST /api/chat/make-admin/:conversationId/:userId
+ */
+export const makeAdmin = async (req, res) => {
+    try {
+        const currentUserId = req.user._id;
+        const { conversationId, userId } = req.params;
+
+        console.log(`MakeAdmin Request: Conversation=${conversationId}, TargetUser=${userId}, Actor=${currentUserId}`);
+
+        const conversation = await Conversation.findOne({
+            _id: conversationId,
+            isGroup: true,
+        });
+
+        if (!conversation) {
+            return res.status(404).json({ success: false, message: "Group not found" });
+        }
+
+        // Ensure groupAdmin is an array (handle legacy data)
+        if (!Array.isArray(conversation.groupAdmin)) {
+            conversation.groupAdmin = conversation.groupAdmin ? [conversation.groupAdmin] : [];
+        }
+
+        // Filter out null/undefined values to prevent crashes
+        conversation.groupAdmin = conversation.groupAdmin.filter(a => a);
+
+        // Check if current user is admin
+        const isAdmin = conversation.groupAdmin.some(a => a.toString() === currentUserId.toString());
+        if (!isAdmin) {
+            return res.status(403).json({ success: false, message: "Only admins can make others admin" });
+        }
+
+        // Check if target user is a participant
+        const isParticipant = conversation.participants.some(p => p.toString() === userId);
+        if (!isParticipant) {
+            return res.status(400).json({ success: false, message: "User is not in this group" });
+        }
+
+        // Check if already admin
+        const alreadyAdmin = conversation.groupAdmin.some(a => a.toString() === userId);
+        if (alreadyAdmin) {
+            return res.status(400).json({ success: false, message: "User is already an admin" });
+        }
+
+        conversation.groupAdmin.push(userId);
+        await conversation.save();
+
+        console.log("MakeAdmin Success");
+        res.status(200).json({ success: true, message: "User is now an admin" });
+    } catch (error) {
+        console.error("Make Admin Error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
+/**
+ * Remove admin status from a user
+ * @route POST /api/chat/remove-admin/:conversationId/:userId
+ */
+export const removeAdmin = async (req, res) => {
+    try {
+        const currentUserId = req.user._id;
+        const { conversationId, userId } = req.params;
+
+        const conversation = await Conversation.findOne({
+            _id: conversationId,
+            isGroup: true,
+        });
+
+        if (!conversation) {
+            return res.status(404).json({ success: false, message: "Group not found" });
+        }
+
+        // Ensure groupAdmin is an array (handle legacy data)
+        if (!Array.isArray(conversation.groupAdmin)) {
+            conversation.groupAdmin = conversation.groupAdmin ? [conversation.groupAdmin] : [];
+        }
+
+        // Check if current user is admin
+        const isAdmin = conversation.groupAdmin.some(a => a.toString() === currentUserId.toString());
+        if (!isAdmin) {
+            return res.status(403).json({ success: false, message: "Only admins can remove admin status" });
+        }
+
+        // Must have at least one admin
+        if (conversation.groupAdmin.length <= 1) {
+            return res.status(400).json({ success: false, message: "Cannot remove the last admin" });
+        }
+
+        conversation.groupAdmin = conversation.groupAdmin.filter(
+            a => a.toString() !== userId
+        );
+        await conversation.save();
+
+        res.status(200).json({ success: true, message: "Admin status removed" });
+    } catch (error) {
+        console.error("Remove Admin Error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};

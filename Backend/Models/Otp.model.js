@@ -10,9 +10,15 @@ const otpSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  type: {
+    type: String,
+    enum: ["EMAIL_VERIFY"],
+    default: "EMAIL_VERIFY"
+  },
   expiresAt: {
     type: Date,
     required: true,
+    index: { expires: 0 }
   },
 }, { timestamps: true });
 

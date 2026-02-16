@@ -117,22 +117,29 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
             ←
           </button>
           <div
-            onClick={() => navigate(`/profile/${friend._id}`)}
-            className="relative cursor-pointer"
+            onClick={() => !friend.isGroup && navigate(`/profile/${friend._id}`)}
+            className={`relative ${!friend.isGroup ? 'cursor-pointer' : ''}`}
           >
             <img
-              src={friend.avatar || `https://ui-avatars.com/api/?name=${friend.username}&background=random&size=44`}
-              alt={friend.username}
+              src={friend.isGroup
+                ? (friend.groupAvatar || `https://ui-avatars.com/api/?name=${friend.groupName}&background=indigo&color=fff&size=44`)
+                : (friend.avatar || `https://ui-avatars.com/api/?name=${friend.username}&background=random&size=44`)
+              }
+              alt={friend.isGroup ? friend.groupName : friend.username}
               className="w-11 h-11 rounded-full object-cover border border-gray-100 transition-all hover:scale-105"
             />
-            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+            {!friend.isGroup && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>}
           </div>
           <div
-            onClick={() => navigate(`/profile/${friend._id}`)}
-            className="cursor-pointer"
+            onClick={() => !friend.isGroup && navigate(`/profile/${friend._id}`)}
+            className={!friend.isGroup ? 'cursor-pointer' : ''}
           >
-            <h1 className="font-semibold text-gray-900 hover:text-indigo-600 transition-colors">{friend.username}</h1>
-            {isTyping ? (
+            <h1 className="font-semibold text-gray-900 hover:text-indigo-600 transition-colors">
+              {friend.isGroup ? friend.groupName : friend.username}
+            </h1>
+            {friend.isGroup ? (
+              <p className="text-sm text-gray-500">{friend.participants?.length || 0} members</p>
+            ) : isTyping ? (
               <p className="text-sm text-green-600">typing...</p>
             ) : (
               <p className="text-sm text-green-600">Online now</p>
@@ -140,13 +147,16 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
           </div>
         </div>
         <div className="flex items-center gap-4 text-gray-500">
-          {/* <FiSearch className="w-5 h-5 cursor-pointer hover:text-indigo-600 transition-colors" /> */}
-          <MdCall className="w-5 h-5 cursor-pointer hover:text-indigo-600 transition-colors" />
-          <MdVideoCall
-            className="w-6 h-6 cursor-pointer hover:text-indigo-600 transition-colors"
-            onClick={() => initiateCall(friend)}
-            title="Start video call"
-          />
+          {!friend.isGroup && (
+            <>
+              <MdCall className="w-5 h-5 cursor-pointer hover:text-indigo-600 transition-colors" />
+              <MdVideoCall
+                className="w-6 h-6 cursor-pointer hover:text-indigo-600 transition-colors"
+                onClick={() => initiateCall(friend)}
+                title="Start video call"
+              />
+            </>
+          )}
           <FiMoreHorizontal
             className="w-5 h-5 cursor-pointer hover:text-indigo-600 transition-colors"
             onClick={onToggleDetails}
@@ -163,7 +173,7 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
             <p>No messages yet</p>
-            <p className="text-sm mt-1">Say hi to {friend.username}! 👋</p>
+            <p className="text-sm mt-1">Say hi to {friend.isGroup ? friend.groupName : friend.username}! 👋</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -185,7 +195,8 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
                     message={msg.text}
                     isMe={isMe}
                     time={new Date(msg.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}
-                    avatar={!isMe ? (msg.sender?.avatar || friend.avatar) : null}
+                    avatar={!isMe ? (msg.sender?.avatar || friend.avatar || `https://ui-avatars.com/api/?name=${msg.sender?.username || 'User'}&background=random`) : null}
+                    senderName={friend.isGroup && !isMe ? msg.sender?.username : null}
                     status={getMessageStatus(msg, isMe)}
                     sharedPost={msg.sharedPost}
                     messageId={msg._id}
@@ -202,7 +213,7 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
       </div>
 
       {/* Input Area or Not Friends Message */}
-      {friends.some(f => f._id === friend._id) ? (
+      {(friend.isGroup || friends.some(f => f._id === friend._id)) ? (
         <div className="bg-white border-t border-gray-200 px-5 py-3">
           <div className="flex items-center gap-3">
             {/* Action Icons */}

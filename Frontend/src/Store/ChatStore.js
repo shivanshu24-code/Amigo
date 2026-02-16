@@ -19,10 +19,16 @@ export const useChatStore = create((set, get) => ({
     setMobileChatOpen: (isOpen) => set({ isMobileChatOpen: isOpen }),
 
     /* ===================== SET CURRENT CHAT ===================== */
-    setCurrentChat: (friend) => {
-        set({ currentChat: friend, messages: [] });
-        if (friend) {
-            get().fetchMessages(friend._id);
+    setCurrentChat: (chatOrFriend) => {
+        set({ currentChat: chatOrFriend, messages: [] });
+        if (chatOrFriend) {
+            if (chatOrFriend.isGroup) {
+                // Group: _id is the conversation ID, fetch via /messages/v/:conversationId
+                get().fetchMessages(chatOrFriend._id, true);
+            } else {
+                // 1-on-1: _id is the friend's user ID, fetch via /messages/:friendId
+                get().fetchMessages(chatOrFriend._id, false);
+            }
         }
     },
 
@@ -38,10 +44,13 @@ export const useChatStore = create((set, get) => ({
     },
 
     /* ===================== FETCH MESSAGES ===================== */
-    fetchMessages: async (friendId) => {
+    fetchMessages: async (id, isGroup = false) => {
         set({ messagesLoading: true, error: null });
         try {
-            const res = await api.get(`/chat/messages/${friendId}`);
+            const url = isGroup
+                ? `/chat/messages/v/${id}`
+                : `/chat/messages/${id}`;
+            const res = await api.get(url);
             set({ messages: res.data.data, messagesLoading: false });
         } catch (err) {
             set({
@@ -71,7 +80,14 @@ export const useChatStore = create((set, get) => ({
         set({ messages: [...messages, optimisticMessage] });
 
         try {
-            const res = await api.post(`/chat/send/${currentChat._id}`, { text });
+            const payload = { text };
+            if (currentChat.isGroup) {
+                payload.conversationId = currentChat._id;
+            }
+
+            // For 1-on-1: send to friend's user ID; for group: send to conversation ID
+            const sendToId = currentChat._id;
+            const res = await api.post(`/chat/send/${sendToId}`, payload);
             const newMessage = res.data.data;
 
             // Replace optimistic message with real one
@@ -99,7 +115,7 @@ export const useChatStore = create((set, get) => ({
     updateConversationWithMessage: (message) => {
         set((state) => {
             const existingConv = state.conversations.find(
-                c => c.friend?._id === message.receiver || c.friend?._id === message.sender?._id
+                c => c._id === message.conversationId
             );
 
             if (existingConv) {
@@ -122,10 +138,11 @@ export const useChatStore = create((set, get) => ({
     /* ===================== RECEIVE NEW MESSAGE ===================== */
     receiveMessage: (messageData) => {
         const { currentChat } = get();
-        const senderId = messageData.message.sender?._id || messageData.message.sender;
 
-        // If this message is from the current chat, add it to messages
-        if (currentChat && senderId === currentChat._id) {
+        // Check if message belongs to the current chat
+        // For 1-on-1: currentChat has conversationId; for groups: currentChat._id is the conversation ID
+        const currentConvId = currentChat?.isGroup ? currentChat._id : currentChat?.conversationId;
+        if (currentChat && messageData.conversationId && messageData.conversationId === currentConvId) {
             set((state) => ({
                 messages: [...state.messages, messageData.message],
             }));
@@ -252,6 +269,82 @@ export const useChatStore = create((set, get) => ({
                 m._id === messageId ? { ...m, isDeletedForEveryone: true } : m
             )
         }));
+    },
+
+    /* ===================== CREATE GROUP ===================== */
+    createGroup: async (name, participants) => {
+        set({ loading: true });
+        try {
+            const res = await api.post("/chat/create-group", { name, participants });
+            if (res.data.success) {
+                await get().fetchConversations();
+                set({ loading: false });
+                return res.data.data;
+            }
+            set({ loading: false });
+            return null;
+        } catch (err) {
+            console.error("Failed to create group:", err);
+            set({ loading: false });
+            return null;
+        }
+    },
+
+    /* ===================== SHARED MEDIA ===================== */
+    fetchSharedMedia: async (conversationId) => {
+        try {
+            const res = await api.get(`/chat/media/${conversationId}`);
+            return res.data.data || [];
+        } catch (err) {
+            console.error("Failed to fetch shared media:", err);
+            return [];
+        }
+    },
+
+    /* ===================== LEAVE GROUP ===================== */
+    leaveGroup: async (conversationId) => {
+        try {
+            const res = await api.post(`/chat/leave-group/${conversationId}`);
+            if (res.data.success) {
+                set({ currentChat: null, messages: [] });
+                await get().fetchConversations();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error("Failed to leave group:", err);
+            return false;
+        }
+    },
+
+    /* ===================== MAKE ADMIN ===================== */
+    makeAdmin: async (conversationId, userId) => {
+        try {
+            const res = await api.post(`/chat/make-admin/${conversationId}/${userId}`);
+            if (res.data.success) {
+                await get().fetchConversations();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error("Failed to make admin:", err);
+            return false;
+        }
+    },
+
+    /* ===================== REMOVE ADMIN ===================== */
+    removeAdmin: async (conversationId, userId) => {
+        try {
+            const res = await api.post(`/chat/remove-admin/${conversationId}/${userId}`);
+            if (res.data.success) {
+                await get().fetchConversations();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error("Failed to remove admin:", err);
+            return false;
+        }
     },
 
     /* ===================== RESET STORE (on logout) ===================== */

@@ -16,7 +16,7 @@ export const createProfile = async (req, res) => {
       interest,
       username,
     } = req.body;
-
+                            
     // 🔒 Username required
     if (!username) {
       return res.status(400).json({ message: "Username is required" });

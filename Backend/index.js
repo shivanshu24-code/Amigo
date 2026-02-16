@@ -23,6 +23,7 @@ import profileroute from "./Routes/Profile.route.js"
 import postroute from "./Routes/Post.routes.js";
 import friendroute from "./Routes/Friend.routes.js";
 import chatroute from "./Routes/Chat.routes.js";
+import eventroute from "./Routes/Event.routes.js";
 
 const app = express();
 const server = createServer(app);
@@ -51,6 +52,7 @@ app.use("/api", likeroute)
 app.use("/api/comment", commentroute)
 app.use("/api/friends", friendroute)
 app.use("/api/chat", chatroute)
+app.use("/api/events", eventroute)
 
 authroute.stack.forEach((r) => {
   if (r.route) {

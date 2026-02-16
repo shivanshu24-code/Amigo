@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { ExternalLink, Heart, MessageCircle } from "lucide-react";
 import { useChatStore } from "../../Store/ChatStore";
 
-const ChatBubble = ({ message, isMe, time, avatar, status, sharedPost, messageId, isDeletedForEveryone, isStoryReply, sharedStory }) => {
+const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPost, messageId, isDeletedForEveryone, isStoryReply, sharedStory }) => {
   const [showOptions, setShowOptions] = useState(false);
   const { deleteMessage } = useChatStore();
 
@@ -153,6 +153,11 @@ const ChatBubble = ({ message, isMe, time, avatar, status, sharedPost, messageId
                 : "bg-white text-gray-800 rounded-2xl rounded-bl-md shadow-sm border border-gray-100"
                 }`}
             >
+              {senderName && !isMe && (
+                <div className="mb-1 text-[11px] font-bold text-indigo-600">
+                  {senderName}
+                </div>
+              )}
               {isStoryReply && (
                 <div className={`mb-1.5 pb-1.5 border-b text-[11px] font-medium flex items-center gap-1.5 ${isMe ? 'border-white/20 text-indigo-100' : 'border-gray-100 text-gray-400'}`}>
                   <span className="flex-shrink-0">📸</span>

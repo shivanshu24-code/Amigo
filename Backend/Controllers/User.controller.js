@@ -22,6 +22,7 @@ export const getAllUsers = async (req, res) => {
                     preserveNullAndEmptyArrays: true
                 }
             },
+            
             {
                 $project: {
                     _id: 1,

@@ -9,6 +9,11 @@ import {
     sharePostToFriend,
     shareStoryToFriend,
     deleteMessage,
+    createGroup,
+    getSharedMedia,
+    leaveGroup,
+    makeAdmin,
+    removeAdmin,
 } from "../Controllers/Chat.controller.js";
 
 const router = express.Router();
@@ -26,8 +31,24 @@ router.post("/share-story/:storyId/:userId", shareStoryToFriend);
 // Get all conversations
 router.get("/conversations", getConversations);
 
+// Get messages by conversation ID (must come before :friendId to avoid "v" being matched as friendId)
+router.get("/messages/v/:conversationId", getMessages);
+
 // Get messages with a specific friend
 router.get("/messages/:friendId", getMessages);
+
+// Create a new group
+router.post("/create-group", createGroup);
+
+// Get shared media for a conversation
+router.get("/media/:conversationId", getSharedMedia);
+
+// Leave a group
+router.post("/leave-group/:conversationId", leaveGroup);
+
+// Make/remove admin
+router.post("/make-admin/:conversationId/:userId", makeAdmin);
+router.post("/remove-admin/:conversationId/:userId", removeAdmin);
 
 // Mark messages as read in a conversation
 router.put("/read/:conversationId", markAsRead);
