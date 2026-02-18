@@ -20,6 +20,9 @@ import Login from "./Pages/Login.jsx";
 import Setpassword from "./Pages/Setpassword.jsx";
 import UserPage from "./Pages/UserPage.jsx";
 import SharedPost from "./Pages/SharedPost.jsx";
+import SettingsPage from "./Pages/SettingsPage.jsx";
+import TimeManagementPage from "./Pages/TimeManagementPage.jsx";
+import useUsageTracker from "./Hooks/useUsageTracker.js";
 import SideBar from "./Components/SideBar.jsx";
 import Navbar from "./Components/Navbar.jsx";
 import VideoCall from "./Components/Chats/VideoCall.jsx";
@@ -27,6 +30,17 @@ import IncomingCall from "./Components/Chats/IncomingCall.jsx";
 import MobileNavbar from "./Components/MobileNavbar.jsx";
 import CreatePostModal from "./Components/Post/CreatePostModal.jsx";
 import CreatePost from "./Pages/CreatePost.jsx";
+import StoryViewer from "./Components/Story/StoryViewer.jsx";
+import CreateStoryModal from "./Components/Story/CreateStoryModal.jsx";
+import ArchivePage from "./Pages/ArchivePage.jsx";
+import CloseFriendsPage from "./Pages/CloseFriendsPage.jsx";
+import PrivacySettingsPage from "./Pages/PrivacySettingsPage.jsx";
+import StorySettingsPage from "./Pages/StorySettingsPage.jsx";
+import TagsMentionsSettingsPage from "./Pages/TagsMentionsSettingsPage.jsx";
+import BlockedPage from "./Pages/BlockedPage.jsx";
+import PrivacyCenterPage from "./Pages/PrivacyCenterPage.jsx";
+import HelpCenterPage from "./Pages/HelpCenterPage.jsx";
+import HelpTopicDetailPage from "./Pages/HelpTopicDetailPage.jsx";
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, authChecked } = useAuthStore();
@@ -47,7 +61,7 @@ const ProtectedRoute = ({ children }) => {
 };
 
 // Pages that should show the app layout (sidebar + navbar)
-const APP_PAGES = ['/feed', '/users', '/chat', '/profile'];
+const APP_PAGES = ['/feed', '/users', '/chat', '/profile', '/settings', '/settings/time-management', '/settings/archive', '/settings/close-friends', '/settings/privacy', '/settings/story-settings', '/settings/tags-mentions', '/settings/blocked', '/settings/privacy-center', '/settings/help-center'];
 
 function App() {
   const checkAuth = useAuthStore((state) => state.checkAuth);
@@ -77,8 +91,23 @@ function App() {
   // Check if current page should show app layout
   const showAppLayout = APP_PAGES.some(page => location.pathname.startsWith(page));
 
-  // Get PostStore state for Create Post Modal
+  // Get Store states for Global Modals
   const { showCreatePostModal, closeCreatePostModal } = usePostStore();
+  const {
+    viewerOpen,
+    viewerStories,
+    startIndex,
+    closeViewer,
+    deleteStory,
+    showCreateStoryModal,
+    closeCreateStoryModal
+  } = useStoryStore();
+
+  useUsageTracker();
+
+  const handleDeleteStory = async (storyId) => {
+    await deleteStory(storyId);
+  };
 
   return (
     <>
@@ -89,6 +118,11 @@ function App() {
       {/* Global Create Post Modal */}
       {showCreatePostModal && (
         <CreatePostModal onClose={closeCreatePostModal} />
+      )}
+
+      {/* Global Create Story Modal */}
+      {showCreateStoryModal && (
+        <CreateStoryModal onClose={closeCreateStoryModal} />
       )}
 
       {showAppLayout ? (
@@ -147,6 +181,94 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute>
+                      <SettingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/time-management"
+                  element={
+                    <ProtectedRoute>
+                      <TimeManagementPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/archive"
+                  element={
+                    <ProtectedRoute>
+                      <ArchivePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/close-friends"
+                  element={
+                    <ProtectedRoute>
+                      <CloseFriendsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/privacy"
+                  element={
+                    <ProtectedRoute>
+                      <PrivacySettingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/story-settings"
+                  element={
+                    <ProtectedRoute>
+                      <StorySettingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/tags-mentions"
+                  element={
+                    <ProtectedRoute>
+                      <TagsMentionsSettingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/blocked"
+                  element={
+                    <ProtectedRoute>
+                      <BlockedPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/privacy-center"
+                  element={
+                    <ProtectedRoute>
+                      <PrivacyCenterPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/help-center"
+                  element={
+                    <ProtectedRoute>
+                      <HelpCenterPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/help-center/:topicId"
+                  element={
+                    <ProtectedRoute>
+                      <HelpTopicDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
               </Routes>
             </main>
           </div>
@@ -174,6 +296,16 @@ function App() {
           <Route path="/post/:postId" element={<SharedPost />} />
           <Route path="*" element={<Navigate to="/feed" />} />
         </Routes>
+      )}
+
+      {/* 📖 Global Story Viewer */}
+      {viewerOpen && (
+        <StoryViewer
+          stories={viewerStories}
+          startIndex={startIndex}
+          onClose={closeViewer}
+          onDelete={handleDeleteStory}
+        />
       )}
     </>
   );

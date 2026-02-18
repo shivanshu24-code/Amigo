@@ -18,7 +18,8 @@ export const createPost = async (req, res) => {
       caption,
       media,
       visibility,
-      aspectRatio
+      aspectRatio,
+      isArchived: req.body.isArchived || false
     });
 
     res.status(201).json(post);
@@ -32,10 +33,48 @@ export const createPost = async (req, res) => {
 
 export const getFeedPosts = async (req, res) => {
   try {
-    const posts = await Post.find()
-      .populate("author", "username avatar")
-      .populate("comments.user", "username avatar")
-      .sort({ createdAt: -1 });
+    const currentUser = await User.findById(req.user._id);
+    const friendIds = currentUser.friends || [];
+
+    const posts = await Post.aggregate([
+      { $match: { isArchived: { $ne: true } } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "author",
+          foreignField: "_id",
+          as: "authorData"
+        }
+      },
+      { $unwind: "$authorData" },
+      {
+        $match: {
+          $or: [
+            { "authorData.isPrivate": { $ne: true } },
+            { author: req.user._id },
+            { author: { $in: friendIds } }
+          ]
+        }
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $project: {
+          _id: 1,
+          caption: 1,
+          media: 1,
+          visibility: 1,
+          aspectRatio: 1,
+          likes: 1,
+          comments: 1,
+          createdAt: 1,
+          author: {
+            _id: "$authorData._id",
+            username: "$authorData.username",
+            avatar: "$authorData.avatar"
+          }
+        }
+      }
+    ]);
 
     res.json(posts);
   } catch (error) {
@@ -157,7 +196,26 @@ export const addComment = async (req, res) => {
 
 export const getUserPosts = async (req, res) => {
   try {
-    const posts = await Post.find({ author: req.params.userId })
+    const targetUserId = req.params.userId;
+    const currentUserId = req.user._id;
+
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check privacy
+    if (targetUser.isPrivate && targetUserId.toString() !== currentUserId.toString()) {
+      const isFriend = targetUser.friends.includes(currentUserId);
+      if (!isFriend) {
+        return res.status(403).json({
+          message: "This account is private. Follow them to see their posts.",
+          isPrivate: true
+        });
+      }
+    }
+
+    const posts = await Post.find({ author: targetUserId, isArchived: { $ne: true } })
       .populate("author", "username avatar")
       .sort({ createdAt: -1 });
 
@@ -305,5 +363,44 @@ export const getSavedPosts = async (req, res) => {
   } catch (error) {
     console.error("GET SAVED POSTS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch saved posts" });
+  }
+};
+
+/**
+ * Get archived posts
+ * @route GET /api/post/archived
+ */
+export const getArchivedPosts = async (req, res) => {
+  try {
+    const posts = await Post.find({ author: req.user._id, isArchived: true })
+      .populate("author", "username avatar")
+      .sort({ createdAt: -1 });
+
+    res.json(posts);
+  } catch (error) {
+    console.error("GET ARCHIVED POSTS ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch archived posts" });
+  }
+};
+/**
+ * Unarchive a post
+ * @route PUT /api/post/unarchive/:id
+ */
+export const unarchivePost = async (req, res) => {
+  try {
+    const post = await Post.findOneAndUpdate(
+      { _id: req.params.id, author: req.user._id },
+      { isArchived: false },
+      { new: true }
+    );
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found or not authorized" });
+    }
+
+    res.json({ success: true, message: "Post unarchived successfully", post });
+  } catch (error) {
+    console.error("UNARCHIVE POST ERROR:", error);
+    res.status(500).json({ message: "Failed to unarchive post" });
   }
 };

@@ -35,7 +35,7 @@ const SideBar = () => {
         {/* <Menu icon={search} label="Discover" /> */}
         <Menu icon={search} label="Users" onClick={() => navigate("/users")} />
         <Menu icon={conversation} label="Chat" onClick={() => navigate("/chat")} />
-        <Menu icon={wheel} label="Settings" />
+        <Menu icon={wheel} label="Settings" onClick={() => navigate("/settings")} />
         <Menu icon={account} label="Profile" onClick={() => navigate("/profile")} />
 
         {/* CREATE POST - visible on hover */}

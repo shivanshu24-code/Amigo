@@ -1,5 +1,5 @@
 import React from 'react'
-import { FiSearch, FiEdit, FiUsers } from "react-icons/fi";
+import { FiSearch, FiEdit, FiUsers, FiImage, FiVideo, FiPaperclip, FiTrash2, FiCamera, FiMic } from "react-icons/fi";
 
 const ChatBox = ({ conversations, friends, showFriendsList, onSelectChat, onNewChat, onCreateGroup, currentChatId, loading }) => {
   const [activeTab, setActiveTab] = React.useState('direct');
@@ -8,8 +8,6 @@ const ChatBox = ({ conversations, friends, showFriendsList, onSelectChat, onNewC
     if (activeTab === 'group') return c.isGroup;
     return !c.isGroup;
   });
-
-  const listToShow = showFriendsList ? friends : filteredConversations;
 
   // Format time to relative (12m, 1h, 2h, etc.)
   const formatTime = (dateString) => {
@@ -25,8 +23,6 @@ const ChatBox = ({ conversations, friends, showFriendsList, onSelectChat, onNewC
     if (diffHours < 24) return `${diffHours}h`;
     return `${diffDays}d`;
   };
-
-
 
   return (
     <div className='bg-white w-full lg:w-[320px] border-r border-gray-200 h-full flex flex-col'>
@@ -87,7 +83,6 @@ const ChatBox = ({ conversations, friends, showFriendsList, onSelectChat, onNewC
       {/* Chat/Friends List */}
       <div className='flex-1 overflow-y-auto'>
         {loading ? (
-          // 🔄 Loading Skeleton
           <div className="p-4 space-y-4">
             {[1, 2, 3, 4, 5].map((n) => (
               <div key={n} className="flex items-center gap-3 animate-pulse">
@@ -100,7 +95,6 @@ const ChatBox = ({ conversations, friends, showFriendsList, onSelectChat, onNewC
             ))}
           </div>
         ) : showFriendsList ? (
-          // Friends List for New Chat
           friends && friends.length > 0 ? (
             friends.map(friend => (
               <div
@@ -129,17 +123,122 @@ const ChatBox = ({ conversations, friends, showFriendsList, onSelectChat, onNewC
             </div>
           )
         ) : (
-          // Conversations List
           filteredConversations && filteredConversations.length > 0 ? (
             filteredConversations.map(conv => {
               const isSelected = currentChatId === conv._id ||
                 (!conv.isGroup && currentChatId === conv.friend?._id);
-              const hasUnread = false; // TODO: Track unread status
+
+              const unreadCount = conv.unreadCount || 0;
 
               const displayName = conv.isGroup ? conv.groupName : conv.friend?.username;
               const displayAvatar = conv.isGroup
                 ? (conv.groupAvatar || `https://ui-avatars.com/api/?name=${conv.groupName}&background=indigo&color=fff&size=48`)
                 : (conv.friend?.avatar || `https://ui-avatars.com/api/?name=${conv.friend?.username}&background=random&size=48`);
+
+              const textPrefix = conv.lastMessage?.sender?._id === 'me'
+                ? 'You: '
+                : (conv.isGroup && conv.lastMessage?.sender?.username ? `${conv.lastMessage.sender.username}: ` : '');
+
+              const renderLastMessagePreview = () => {
+                const isUnavailableSharedStory =
+                  !conv.lastMessage?.text &&
+                  !conv.lastMessage?.sharedPost &&
+                  !conv.lastMessage?.sharedStory &&
+                  !conv.lastMessage?.attachment?.url &&
+                  !conv.lastMessage?.isStoryReply &&
+                  !conv.lastMessage?.isDeletedForEveryone;
+
+                if (conv.lastMessage?.isDeletedForEveryone) {
+                  return (
+                    <span className="inline-flex items-center gap-1.5">
+                      <FiTrash2 className="w-3.5 h-3.5" />
+                      Message deleted
+                    </span>
+                  );
+                }
+
+                if (conv.lastMessage?.isStoryReply) {
+                  return (
+                    <span className="inline-flex items-center gap-1.5">
+                      <FiCamera className="w-3.5 h-3.5" />
+                      Replied to story
+                    </span>
+                  );
+                }
+
+                if (conv.lastMessage?.attachment?.url) {
+                  const attachmentType = conv.lastMessage.attachment?.resourceType;
+                  const attachmentMime = conv.lastMessage.attachment?.mimeType || "";
+                  const attachmentFileName = (conv.lastMessage.attachment?.fileName || "").toLowerCase();
+                  const fallbackAudioByName = (!attachmentMime || attachmentMime === "application/octet-stream") &&
+                    /\.(mp3|m4a|wav|ogg|webm|aac)$/i.test(attachmentFileName);
+                  const isLikelyVoiceNote = attachmentFileName.startsWith("voice-message-");
+                  const isAudioAttachment = attachmentType === "audio" ||
+                    attachmentMime.startsWith("audio/") ||
+                    fallbackAudioByName ||
+                    (isLikelyVoiceNote && attachmentMime.includes("webm"));
+
+                  if (isAudioAttachment) {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 text-emerald-600">
+                        <FiMic className="w-3.5 h-3.5" />
+                        Voice message
+                      </span>
+                    );
+                  }
+                  if (attachmentType === "image") {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 text-blue-600">
+                        <FiImage className="w-3.5 h-3.5" />
+                        Photo
+                      </span>
+                    );
+                  }
+                  if (attachmentType === "video") {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 text-purple-600">
+                        <FiVideo className="w-3.5 h-3.5" />
+                        Video
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="inline-flex items-center gap-1.5 text-slate-600">
+                      <FiPaperclip className="w-3.5 h-3.5" />
+                      File
+                    </span>
+                  );
+                }
+
+                if (conv.lastMessage?.sharedPost) {
+                  return (
+                    <span className="inline-flex items-center gap-1.5">
+                      <FiImage className="w-3.5 h-3.5" />
+                      Shared a post
+                    </span>
+                  );
+                }
+
+                if (conv.lastMessage?.sharedStory) {
+                  return (
+                    <span className="inline-flex items-center gap-1.5">
+                      <FiCamera className="w-3.5 h-3.5" />
+                      Shared a story
+                    </span>
+                  );
+                }
+
+                if (isUnavailableSharedStory) {
+                  return (
+                    <span className="inline-flex items-center gap-1.5 text-gray-500">
+                      <FiCamera className="w-3.5 h-3.5" />
+                      Story unavailable
+                    </span>
+                  );
+                }
+
+                return `${textPrefix}${conv.lastMessage?.text || 'Start a conversation'}`;
+              };
 
               return (
                 <div
@@ -163,25 +262,22 @@ const ChatBox = ({ conversations, friends, showFriendsList, onSelectChat, onNewC
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center">
-                      <p className={`font-semibold truncate ${hasUnread ? 'text-gray-900' : 'text-gray-800'}`}>
+                    <div className="flex justify-between items-center gap-2">
+                      <p className={`font-semibold truncate ${unreadCount > 0 ? 'text-gray-900 font-bold' : 'text-gray-800'}`}>
                         {displayName}
                       </p>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-400 flex-shrink-0">
                         {formatTime(conv.lastMessage?.createdAt || conv.updatedAt)}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <p className={`text-sm truncate flex-1 ${hasUnread ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                        {conv.lastMessage?.isDeletedForEveryone
-                          ? '🗑️ Message deleted'
-                          : conv.lastMessage?.isStoryReply
-                            ? '📸 Replied to story'
-                            : (conv.lastMessage?.sender?._id === 'me' ? 'You: ' : (conv.isGroup && conv.lastMessage?.sender?.username ? `${conv.lastMessage.sender.username}: ` : '')) +
-                            (conv.lastMessage?.text || (conv.lastMessage?.sharedPost ? '📷 Shared a post' : (conv.lastMessage?.sharedStory ? '📸 Shared a story' : 'Start a conversation')))}
+                      <p className={`text-sm truncate flex-1 ${unreadCount > 0 ? 'text-gray-900 font-bold' : 'text-gray-500'}`}>
+                        {renderLastMessagePreview()}
                       </p>
-                      {hasUnread && (
-                        <div className="w-2.5 h-2.5 bg-indigo-600 rounded-full flex-shrink-0"></div>
+                      {unreadCount > 0 && (
+                        <div className="flex items-center justify-center min-w-max h-5 px-2 bg-indigo-600 text-white rounded-full flex-shrink-0">
+                          <span className="text-xs font-bold">{unreadCount}</span>
+                        </div>
                       )}
                     </div>
                   </div>

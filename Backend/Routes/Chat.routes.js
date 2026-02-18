@@ -2,6 +2,7 @@ import express from "express";
 import { protect } from "../Middleware/token.js";
 import {
     sendMessage,
+    sendAttachment,
     getConversations,
     getMessages,
     markAsRead,
@@ -15,7 +16,11 @@ import {
     makeAdmin,
     removeAdmin,
     clearChat,
+    blockUser,
+    unblockUser,
+    getBlockStatus,
 } from "../Controllers/Chat.controller.js";
+import chatUpload from "../Middleware/ChatUpload.js";
 
 const router = express.Router();
 
@@ -24,6 +29,7 @@ router.use(protect);
 
 // Send a message to a friend
 router.post("/send/:userId", sendMessage);
+router.post("/send-attachment/:userId", chatUpload.single("file"), sendAttachment);
 
 // Share a post with a friend
 router.post("/share/:postId/:userId", sharePostToFriend);
@@ -62,5 +68,10 @@ router.post("/message/delete/:messageId", deleteMessage);
 
 // Get unread message count
 router.get("/unread", getUnreadCount);
+
+// Block/Unblock users
+router.post("/block/:userId", blockUser);
+router.post("/unblock/:userId", unblockUser);
+router.get("/block-status/:userId", getBlockStatus);
 
 export default router;

@@ -2,12 +2,10 @@ import { create } from "zustand";
 import { getSocket } from "../Socket/Socket.js";
 import { useAuthStore } from "./AuthStore.js";
 
-
-
 export const useCallStore = create((set, get) => ({
     /* ===================== STATE ===================== */
-    callStatus: 'idle', // 'idle' | 'calling' | 'ringing' | 'inCall' | 'ended'
-    currentCall: null, // { oderId, oderName, oderAvatar, isIncoming }
+    callStatus: "idle", // 'idle' | 'calling' | 'ringing' | 'inCall' | 'ended'
+    currentCall: null, // { oderId, oderName, oderAvatar, isIncoming, callType }
     localStream: null,
     remoteStream: null,
     isAudioEnabled: true,
@@ -15,60 +13,52 @@ export const useCallStore = create((set, get) => ({
     callStartTime: null,
     error: null,
 
-
     /* ===================== INITIATE CALL ===================== */
-    initiateCall: (friend) => {
-        console.log('📞 Initiating call to friend:', friend);
-
+    initiateCall: (friend, callType = "video") => {
         const socket = getSocket();
-        console.log('📞 Socket:', socket ? 'connected' : 'not connected');
-
-        if (!socket || !friend) {
-            console.error('📞 Cannot initiate call - socket or friend missing');
-            return;
-        }
+        if (!socket || !friend) return;
 
         set({
-            callStatus: 'calling',
+            callStatus: "calling",
             currentCall: {
                 oderId: friend._id,
                 oderName: friend.username,
                 oderAvatar: friend.avatar,
                 isIncoming: false,
+                callType,
             },
             error: null,
         });
 
-        // Get caller info from auth-store
         const user = useAuthStore.getState().user || {};
-        console.log('📞 Caller user:', user);
 
-        socket.emit('initiate-call', {
+        socket.emit("initiate-call", {
             receiverId: friend._id,
-            callerName: user.username || user.firstname || 'User',
-            callerAvatar: user.avatar || '',
+            callerName: user.username || user.firstname || "User",
+            callerAvatar: user.avatar || "",
+            callType,
         });
+    },
 
-        console.log('📞 Emitted initiate-call event');
+    initiateVoiceCall: (friend) => {
+        get().initiateCall(friend, "voice");
     },
 
     /* ===================== RECEIVE INCOMING CALL ===================== */
     receiveIncomingCall: (data) => {
-        console.log('📞 Received incoming call:', data);
-        const { callerId, callerName, callerAvatar } = data;
+        const { callerId, callerName, callerAvatar, callType = "video" } = data;
 
         set({
-            callStatus: 'ringing',
+            callStatus: "ringing",
             currentCall: {
                 oderId: callerId,
                 oderName: callerName,
                 oderAvatar: callerAvatar,
                 isIncoming: true,
+                callType,
             },
             error: null,
         });
-
-        console.log('📞 Call status set to ringing');
     },
 
     /* ===================== ACCEPT CALL ===================== */
@@ -79,17 +69,17 @@ export const useCallStore = create((set, get) => ({
         const socket = getSocket();
         if (!socket) return;
 
-        // Get user info from auth-store
         const user = useAuthStore.getState().user || {};
 
-        socket.emit('accept-call', {
+        socket.emit("accept-call", {
             callerId: currentCall.oderId,
-            receiverName: user.username || user.firstname || 'User',
-            receiverAvatar: user.avatar || '',
+            receiverName: user.username || user.firstname || "User",
+            receiverAvatar: user.avatar || "",
+            callType: currentCall.callType || "video",
         });
 
         set({
-            callStatus: 'inCall',
+            callStatus: "inCall",
             callStartTime: Date.now(),
         });
     },
@@ -97,8 +87,12 @@ export const useCallStore = create((set, get) => ({
     /* ===================== CALL ACCEPTED ===================== */
     callAccepted: (data) => {
         set({
-            callStatus: 'inCall',
+            callStatus: "inCall",
             callStartTime: Date.now(),
+            currentCall: {
+                ...get().currentCall,
+                callType: data?.callType || get().currentCall?.callType || "video",
+            },
         });
     },
 
@@ -110,12 +104,12 @@ export const useCallStore = create((set, get) => ({
         const socket = getSocket();
         if (!socket) return;
 
-        socket.emit('reject-call', {
+        socket.emit("reject-call", {
             callerId: currentCall.oderId,
         });
 
         set({
-            callStatus: 'idle',
+            callStatus: "idle",
             currentCall: null,
             error: null,
         });
@@ -124,12 +118,11 @@ export const useCallStore = create((set, get) => ({
     /* ===================== CALL REJECTED ===================== */
     callRejected: () => {
         set({
-            callStatus: 'idle',
+            callStatus: "idle",
             currentCall: null,
-            error: 'Call was declined',
+            error: "Call was declined",
         });
 
-        // Clear error after 3 seconds
         setTimeout(() => {
             set({ error: null });
         }, 3000);
@@ -141,18 +134,17 @@ export const useCallStore = create((set, get) => ({
 
         const socket = getSocket();
         if (socket && currentCall) {
-            socket.emit('end-call', {
+            socket.emit("end-call", {
                 oderId: currentCall.oderId,
             });
         }
 
-        // Stop local stream
         if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
+            localStream.getTracks().forEach((track) => track.stop());
         }
 
         set({
-            callStatus: 'idle',
+            callStatus: "idle",
             currentCall: null,
             localStream: null,
             remoteStream: null,
@@ -166,13 +158,12 @@ export const useCallStore = create((set, get) => ({
     callEnded: () => {
         const { localStream } = get();
 
-        // Stop local stream
         if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
+            localStream.getTracks().forEach((track) => track.stop());
         }
 
         set({
-            callStatus: 'idle',
+            callStatus: "idle",
             currentCall: null,
             localStream: null,
             remoteStream: null,
@@ -187,11 +178,11 @@ export const useCallStore = create((set, get) => ({
         const { localStream } = get();
 
         if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
+            localStream.getTracks().forEach((track) => track.stop());
         }
 
         set({
-            callStatus: 'idle',
+            callStatus: "idle",
             currentCall: null,
             localStream: null,
             remoteStream: null,
@@ -206,9 +197,9 @@ export const useCallStore = create((set, get) => ({
     /* ===================== CALL BUSY ===================== */
     callBusy: () => {
         set({
-            callStatus: 'idle',
+            callStatus: "idle",
             currentCall: null,
-            error: 'User is busy on another call',
+            error: "User is busy on another call",
         });
 
         setTimeout(() => {
@@ -246,17 +237,17 @@ export const useCallStore = create((set, get) => ({
 
     /* ===================== CALL RINGING ===================== */
     callRinging: () => {
-        set({ callStatus: 'calling' });
+        set({ callStatus: "calling" });
     },
 
     /* ===================== RESET STORE ===================== */
     reset: () => {
         const { localStream } = get();
         if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
+            localStream.getTracks().forEach((track) => track.stop());
         }
         set({
-            callStatus: 'idle',
+            callStatus: "idle",
             currentCall: null,
             localStream: null,
             remoteStream: null,

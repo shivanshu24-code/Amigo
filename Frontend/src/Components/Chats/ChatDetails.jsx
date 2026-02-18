@@ -3,7 +3,7 @@ import { FiX, FiImage, FiUsers, FiShield, FiLogOut, FiChevronDown, FiChevronUp, 
 import { useChatStore } from '../../Store/ChatStore';
 import { useAuthStore } from '../../Store/AuthStore';
 
-const ChatDetails = ({ friend, onClose }) => {
+const ChatDetails = ({ friend, onClose, focusSection = "media", onlySection = null }) => {
     const { fetchSharedMedia, leaveGroup, makeAdmin, removeAdmin, conversations, clearChat } = useChatStore();
     const { user } = useAuthStore();
     const [sharedMedia, setSharedMedia] = useState([]);
@@ -13,6 +13,8 @@ const ChatDetails = ({ friend, onClose }) => {
     const [confirmLeave, setConfirmLeave] = useState(false);
     const [confirmClear, setConfirmClear] = useState(false);
     const [actionLoading, setActionLoading] = useState(null); // tracks which member action is loading
+    const membersSectionRef = React.useRef(null);
+    const mediaSectionRef = React.useRef(null);
 
     const isGroup = friend?.isGroup;
 
@@ -45,6 +47,20 @@ const ChatDetails = ({ friend, onClose }) => {
             });
         }
     }, [conversationId]);
+
+    useEffect(() => {
+        if (focusSection === "members") {
+            setShowMembers(true);
+            setTimeout(() => {
+                membersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 0);
+        } else if (focusSection === "media") {
+            setShowMedia(true);
+            setTimeout(() => {
+                mediaSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 0);
+        }
+    }, [focusSection]);
 
     const handleLeaveGroup = async () => {
         if (!isGroup) return;
@@ -100,7 +116,7 @@ const ChatDetails = ({ friend, onClose }) => {
         : (friend?.avatar || `https://ui-avatars.com/api/?name=${friend?.username}&background=random&size=96`);
 
     return (
-        <div className="w-[320px] bg-white border-l border-gray-200 h-full flex flex-col">
+       <div className="w-full md:w-[320px] bg-white border-l border-gray-200 h-full flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
                 <h2 className="font-semibold text-gray-900">
@@ -138,8 +154,8 @@ const ChatDetails = ({ friend, onClose }) => {
             <div className="flex-1 overflow-y-auto">
 
                 {/* Members Section (group only) */}
-                {isGroup && (
-                    <div className="border-b border-gray-100">
+                {isGroup && onlySection !== "media" && (
+                    <div ref={membersSectionRef} className="border-b border-gray-100">
                         <button
                             className="flex items-center justify-between w-full px-5 py-3 hover:bg-gray-50 transition-colors"
                             onClick={() => setShowMembers(!showMembers)}
@@ -213,7 +229,8 @@ const ChatDetails = ({ friend, onClose }) => {
                 )}
 
                 {/* Shared Media Section */}
-                <div className="border-b border-gray-100">
+                {onlySection !== "members" && (
+                <div ref={mediaSectionRef} className="border-b border-gray-100">
                     <button
                         className="flex items-center justify-between w-full px-5 py-3 hover:bg-gray-50 transition-colors"
                         onClick={() => setShowMedia(!showMedia)}
@@ -253,8 +270,10 @@ const ChatDetails = ({ friend, onClose }) => {
                         </div>
                     )}
                 </div>
+                )}
 
                 {/* Privacy & Support (Clear Chat) */}
+                {!onlySection && (
                 <div className="p-4 border-b border-gray-100">
                     {!confirmClear ? (
                         <button
@@ -288,9 +307,10 @@ const ChatDetails = ({ friend, onClose }) => {
                         </div>
                     )}
                 </div>
+                )}
 
                 {/* Leave Group (group only) */}
-                {isGroup && (
+                {isGroup && !onlySection && (
                     <div className="p-4">
                         {!confirmLeave ? (
                             <button

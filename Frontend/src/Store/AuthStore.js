@@ -12,7 +12,8 @@ import {
   generateRSAKeyPair,
   exportPublicKey,
   exportPrivateKey,
-  importPrivateKey
+  importPrivateKey,
+  isCryptoSupported
 } from "../Utils/CryptoUtils.js";
 
 export const useAuthStore = create(
@@ -31,12 +32,46 @@ export const useAuthStore = create(
 
       /* ===================== E2EE KEY MANAGEMENT ===================== */
       setupKeys: async () => {
-        const storedPrivateKey = localStorage.getItem("e2ee_private_key");
+        if (!isCryptoSupported()) {
+          console.warn("E2EE Disabled: Browser context not secure (HTTPS or localhost required).");
+          set({ e2eeEnabled: false });
+          return;
+        }
+
+        const userId = get().user?._id;
+        if (!userId) {
+          set({ e2eeEnabled: false });
+          return;
+        }
+
+        const privateKeyStorageKey = `e2ee_private_key_${userId}`;
+        const publicKeyStorageKey = `e2ee_public_key_${userId}`;
+
+        let storedPrivateKey = localStorage.getItem(privateKeyStorageKey);
+        let storedPublicKey = localStorage.getItem(publicKeyStorageKey);
+
+        // One-time migration support from legacy non-user-scoped keys
+        if (!storedPrivateKey) {
+          const legacyPrivate = localStorage.getItem("e2ee_private_key");
+          if (legacyPrivate) {
+            storedPrivateKey = legacyPrivate;
+            localStorage.setItem(privateKeyStorageKey, legacyPrivate);
+          }
+        }
+        if (!storedPublicKey) {
+          const legacyPublic = localStorage.getItem("e2ee_public_key");
+          if (legacyPublic) {
+            storedPublicKey = legacyPublic;
+            localStorage.setItem(publicKeyStorageKey, legacyPublic);
+          }
+        }
 
         try {
-          if (storedPrivateKey) {
+          if (storedPrivateKey && storedPublicKey) {
             // Import existing private key
             const key = await importPrivateKey(storedPrivateKey);
+            // Ensure server has the matching public key for this user
+            await api.put("/profile", { publicKey: storedPublicKey });
             set({ privateKey: key, e2eeEnabled: true });
           } else {
             // Generate new key pair
@@ -44,7 +79,11 @@ export const useAuthStore = create(
             const privateKeyB64 = await exportPrivateKey(keyPair.privateKey);
             const publicKeyB64 = await exportPublicKey(keyPair.publicKey);
 
+            localStorage.setItem(privateKeyStorageKey, privateKeyB64);
+            localStorage.setItem(publicKeyStorageKey, publicKeyB64);
+            // Keep legacy keys for backward compatibility with any older code path
             localStorage.setItem("e2ee_private_key", privateKeyB64);
+            localStorage.setItem("e2ee_public_key", publicKeyB64);
 
             // Upload public key to server
             await api.put("/profile", { publicKey: publicKeyB64 });
@@ -90,7 +129,7 @@ export const useAuthStore = create(
         } catch (err) {
           set({
             loading: false,
-            error: err.message || "OTP verification failed",
+            error: err.response?.data?.message || err.message || "OTP verification failed",
           });
           return false;
         }
@@ -224,6 +263,52 @@ export const useAuthStore = create(
           hasProfile: false,
           authChecked: true,
         });
+      },
+      /* ===================== UPDATE PRIVACY ===================== */
+      updatePrivacy: async (isPrivate) => {
+        set({ loading: true, error: null });
+        try {
+          const res = await api.put("/auth/privacy", { isPrivate });
+          if (res.data.success) {
+            set((state) => ({
+              user: { ...state.user, isPrivate: res.data.isPrivate },
+              loading: false
+            }));
+            return true;
+          }
+          return false;
+        } catch (err) {
+          set({
+            loading: false,
+            error: err.response?.data?.message || err.message,
+          });
+          return false;
+        }
+      },
+      updateTagsAndMentions: async (settings) => {
+        set({ loading: true, error: null });
+        try {
+          const res = await api.put("/auth/tags-mentions", settings);
+          if (res.data.success) {
+            set((state) => ({
+              user: {
+                ...state.user,
+                tagInStoryPermission: res.data.tagInStoryPermission,
+                mentionPermission: res.data.mentionPermission,
+              },
+              loading: false,
+            }));
+            return true;
+          }
+          set({ loading: false });
+          return false;
+        } catch (err) {
+          set({
+            loading: false,
+            error: err.response?.data?.message || err.message,
+          });
+          return false;
+        }
       },
     }),
     {

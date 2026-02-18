@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MdCall, MdVideoCall } from "react-icons/md";
-import { FiSearch, FiMoreHorizontal, FiImage, FiPaperclip, FiSmile, FiSend } from "react-icons/fi";
+import { FiSearch, FiMoreHorizontal, FiImage, FiPaperclip, FiSmile, FiSend, FiMic, FiStopCircle } from "react-icons/fi";
 import { BsEmojiSmile } from "react-icons/bs";
 import { IoSend } from "react-icons/io5";
+import { Ban, Unlock, X } from "lucide-react";
+import EmojiPicker from "emoji-picker-react";
 import ChatBubble from "./ChatBubble.jsx";
 import { useChatStore } from "../../Store/ChatStore.js";
 import { useAuthStore } from "../../Store/AuthStore.js";
@@ -10,15 +12,35 @@ import { useCallStore } from "../../Store/CallStore.js";
 import { useFriendStore } from "../../Store/FriendStore.js";
 import { useNavigate } from "react-router-dom";
 
-const MainChat = ({ friend, onToggleDetails, onBack }) => {
+const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsComponent: DetailsComponent }) => {
   const navigate = useNavigate();
-  const { messages, sendMessage, isTyping, sendTyping, stopTyping, messagesLoading } = useChatStore();
-  const { user } = useAuthStore();
+  const { messages, sendMessage, sendAttachment, isTyping, sendTyping, stopTyping, messagesLoading, blockUser, unblockUser, isBlocked } = useChatStore();
+  const { user, e2eeEnabled } = useAuthStore();
   const { friends } = useFriendStore();
-  const { initiateCall, error: callError } = useCallStore();
+  const { initiateCall, initiateVoiceCall, error: callError } = useCallStore();
   const [input, setInput] = useState("");
+  const [showMenu, setShowMenu] = useState(false);
+  // NEW: tracks whether mobile details overlay is open
+  const [showMobileDetails, setShowMobileDetails] = useState(false);
+  const [mobileDetailsSection, setMobileDetailsSection] = useState("media");
+  const [mobileOnlySection, setMobileOnlySection] = useState(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [recordingError, setRecordingError] = useState("");
   const chatEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordingChunksRef = useRef([]);
+  const recordingIntervalRef = useRef(null);
+  const menuRef = useRef(null);
+  const emojiPickerRef = useRef(null);
+  const messageInputRef = useRef(null);
+  const docInputRef = useRef(null);
+  const mediaInputRef = useRef(null);
+  const isChatEncrypted = friend?.isGroup
+    ? Boolean(e2eeEnabled) && Array.isArray(friend?.participants) && friend.participants.length > 0 && friend.participants.every((p) => Boolean(p?.publicKey))
+    : Boolean(friend?.publicKey) && Boolean(e2eeEnabled);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -27,11 +49,74 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
     }
   }, [messages]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setShowMenu(false);
+      }
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Ensure Enter sends message even while emoji picker is open
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+
+    const handleGlobalEnter = (event) => {
+      if (event.key === "Enter" && !event.shiftKey && input.trim()) {
+        event.preventDefault();
+        handleSendMessage();
+      }
+    };
+
+    document.addEventListener("keydown", handleGlobalEnter, true);
+    return () => document.removeEventListener("keydown", handleGlobalEnter, true);
+  }, [showEmojiPicker, input]);
+
+  // Close mobile details when friend changes
+  useEffect(() => {
+    setShowMobileDetails(false);
+    setMobileDetailsSection("media");
+    setMobileOnlySection(null);
+  }, [friend?._id]);
+
+  useEffect(() => {
+    return () => {
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, []);
+
+  const handleBlockUser = async () => {
+    const result = await blockUser(friend._id);
+    if (result.success) {
+      setShowMenu(false);
+    }
+  };
+
+  const handleUnblockUser = async () => {
+    const result = await unblockUser(friend._id);
+    if (result.success) {
+      setShowMenu(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!input.trim() || !friend) return;
 
     const text = input.trim();
     setInput("");
+    setShowEmojiPicker(false);
 
     // Stop typing indicator
     stopTyping();
@@ -62,6 +147,129 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  // NEW: unified handler — on desktop call onToggleDetails, on mobile open overlay
+  const handleViewDetails = (section = "media", onlySection = null) => {
+    setShowMenu(false);
+    const isMobile = window.innerWidth < 768; // matches Tailwind's md breakpoint
+    if (isMobile) {
+      setMobileDetailsSection(section);
+      setMobileOnlySection(onlySection);
+      setShowMobileDetails(true);
+    } else {
+      if (onOpenDetails) {
+        onOpenDetails(section, onlySection);
+      } else {
+        onToggleDetails();
+      }
+    }
+  };
+
+  const handleAttachmentPick = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await sendAttachment(file);
+    event.target.value = "";
+  };
+
+  const handleEmojiSelect = (emojiData) => {
+    setInput((prev) => `${prev}${emojiData.emoji}`);
+  };
+
+  const formatRecordingTime = (seconds) => {
+    const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
+    const secs = (seconds % 60).toString().padStart(2, "0");
+    return `${mins}:${secs}`;
+  };
+
+  const startRecordingAudio = async () => {
+    if (isRecording) return;
+    try {
+      setRecordingError("");
+      if (typeof window !== "undefined" && !window.isSecureContext) {
+        setRecordingError("Microphone needs HTTPS or localhost.");
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setRecordingError("Microphone is not supported in this browser.");
+        return;
+      }
+      if (typeof MediaRecorder === "undefined") {
+        setRecordingError("Audio recording is not supported in this browser.");
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeCandidates = [
+        "audio/mp4",
+        "audio/webm;codecs=opus",
+        "audio/webm",
+      ];
+      const mimeType = mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recordingChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const rawRecordedMime = recorder.mimeType || mimeType || "audio/webm";
+        const recordedMimeType = rawRecordedMime.startsWith("video/webm")
+          ? "audio/webm"
+          : rawRecordedMime;
+        if (recordingChunksRef.current.length === 0) {
+          stream.getTracks().forEach((track) => track.stop());
+          setRecordingError("No audio captured. Please try again.");
+          setIsRecording(false);
+          setRecordingTime(0);
+          if (recordingIntervalRef.current) {
+            clearInterval(recordingIntervalRef.current);
+            recordingIntervalRef.current = null;
+          }
+          return;
+        }
+
+        const audioBlob = new Blob(recordingChunksRef.current, {
+          type: recordedMimeType,
+        });
+        const extension = recordedMimeType.includes("mp4") ? "m4a" : "webm";
+        const audioFile = new File([audioBlob], `voice-message-${Date.now()}.${extension}`, {
+          type: recordedMimeType,
+        });
+
+        stream.getTracks().forEach((track) => track.stop());
+        setIsRecording(false);
+        setRecordingTime(0);
+        if (recordingIntervalRef.current) {
+          clearInterval(recordingIntervalRef.current);
+          recordingIntervalRef.current = null;
+        }
+
+        if (audioFile.size > 0) {
+          await sendAttachment(audioFile);
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (error) {
+      console.error("Microphone permission denied or unavailable:", error);
+      setRecordingError("Microphone permission denied or unavailable.");
+    }
+  };
+
+  const stopRecordingAudio = () => {
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== "recording") return;
+    mediaRecorderRef.current.stop();
   };
 
   // Get message status for display
@@ -105,7 +313,60 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
   }
 
   return (
-    <div className="h-full flex-1 flex flex-col bg-gray-100">
+    <div className="h-full flex-1 flex flex-col bg-gray-100 relative">
+      {/* ── MOBILE DETAILS OVERLAY ── */}
+      {/* 
+        This full-screen overlay slides in on mobile when "View details" is tapped.
+        It renders your existing details panel component inside it.
+        On desktop this overlay never appears — onToggleDetails() handles it instead.
+      */}
+      {showMobileDetails && (
+        <div className="absolute inset-0 z-50 flex flex-col md:hidden overflow-y-auto bg-white">
+          {/* 
+            No wrapper header here — ChatDetails renders its own header.
+            We just pass onClose so its internal close/back button works.
+          */}
+          {DetailsComponent ? (
+            <DetailsComponent
+              friend={friend}
+              focusSection={mobileDetailsSection}
+              onlySection={mobileOnlySection}
+              onClose={() => setShowMobileDetails(false)}
+            />
+          ) : (
+            // Fallback if no detailsComponent prop is provided
+            <div className="flex flex-col items-center gap-4 px-6 py-8">
+              <div className="flex items-center justify-between w-full mb-2">
+                <h2 className="font-semibold text-gray-900 text-base">Chat Details</h2>
+                <button
+                  onClick={() => setShowMobileDetails(false)}
+                  className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <img
+                src={
+                  friend.isGroup
+                    ? (friend.groupAvatar || `https://ui-avatars.com/api/?name=${friend.groupName}&background=indigo&color=fff&size=80`)
+                    : (friend.avatar || `https://ui-avatars.com/api/?name=${friend.username}&background=random&size=80`)
+                }
+                alt={friend.isGroup ? friend.groupName : friend.username}
+                className="w-20 h-20 rounded-full object-cover border border-gray-200"
+              />
+              <div className="text-center">
+                <h3 className="font-semibold text-gray-900 text-lg">
+                  {friend.isGroup ? friend.groupName : friend.username}
+                </h3>
+                {friend.isGroup && (
+                  <p className="text-sm text-gray-500 mt-1">{friend.participants?.length || 0} members</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Chat Header */}
       <div className="flex justify-between items-center h-16 px-5 bg-white border-b border-gray-200">
         <div className="flex items-center gap-3">
@@ -117,8 +378,14 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
             ←
           </button>
           <div
-            onClick={() => !friend.isGroup && navigate(`/profile/${friend._id}`)}
-            className={`relative ${!friend.isGroup ? 'cursor-pointer' : ''}`}
+            onClick={() => {
+              if (friend.isGroup) {
+                handleViewDetails("media");
+              } else {
+                navigate(`/profile/${friend._id}`);
+              }
+            }}
+            className="relative cursor-pointer"
           >
             <img
               src={friend.isGroup
@@ -131,14 +398,20 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
             {!friend.isGroup && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>}
           </div>
           <div
-            onClick={() => !friend.isGroup && navigate(`/profile/${friend._id}`)}
-            className={!friend.isGroup ? 'cursor-pointer' : ''}
+            onClick={() => {
+              if (friend.isGroup) {
+                handleViewDetails("media");
+              } else {
+                navigate(`/profile/${friend._id}`);
+              }
+            }}
+            className="cursor-pointer"
           >
             <div className="flex items-center gap-1.5">
               <h1 className="font-semibold text-gray-900 hover:text-indigo-600 transition-colors">
                 {friend.isGroup ? friend.groupName : friend.username}
               </h1>
-              {!friend.isGroup && friend.publicKey && (
+              {isChatEncrypted && (
                 <span title="End-to-End Encrypted" className="text-green-500">
                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
@@ -147,7 +420,15 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
               )}
             </div>
             {friend.isGroup ? (
-              <p className="text-sm text-gray-500">{friend.participants?.length || 0} members</p>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleViewDetails("members", "members");
+                }}
+                className="text-sm text-gray-500 hover:text-indigo-600 transition-colors"
+              >
+                {friend.participants?.length || 0} members
+              </button>
             ) : isTyping ? (
               <p className="text-sm text-green-600">typing...</p>
             ) : (
@@ -158,25 +439,70 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
         <div className="flex items-center gap-4 text-gray-500">
           {!friend.isGroup && (
             <>
-              <MdCall className="w-5 h-5 cursor-pointer hover:text-indigo-600 transition-colors" />
+              <MdCall
+                className="w-5 h-5 cursor-pointer hover:text-indigo-600 transition-colors"
+                onClick={() => initiateVoiceCall(friend)}
+                title="Start voice call"
+              />
               <MdVideoCall
                 className="w-6 h-6 cursor-pointer hover:text-indigo-600 transition-colors"
-                onClick={() => initiateCall(friend)}
+                onClick={() => initiateCall(friend, "video")}
                 title="Start video call"
               />
             </>
           )}
-          <FiMoreHorizontal
-            className="w-5 h-5 cursor-pointer hover:text-indigo-600 transition-colors"
-            onClick={onToggleDetails}
-          />
+          
+          {/* Dropdown Menu */}
+          <div ref={menuRef} className="relative">
+            <button
+              onClick={() => {
+                if (friend.isGroup) {
+                  handleViewDetails("media", "media");
+                } else {
+                  setShowMenu(!showMenu);
+                }
+              }}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <FiMoreHorizontal className="w-5 h-5" />
+            </button>
+
+            {showMenu && !friend.isGroup && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 z-50">
+                {isBlocked ? (
+                  <button
+                    onClick={handleUnblockUser}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-green-50 text-green-600 font-medium transition-colors border-b border-gray-100 last:border-b-0"
+                  >
+                    <Unlock size={18} />
+                    Unblock user
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleBlockUser}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 text-red-600 font-medium transition-colors border-b border-gray-100 last:border-b-0"
+                  >
+                    <Ban size={18} />
+                    Block user
+                  </button>
+                )}
+                {/* FIXED: now calls handleViewDetails instead of onToggleDetails directly */}
+                <button
+                  onClick={() => handleViewDetails("media")}
+                  className="w-full text-left px-4 py-3 text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
+                >
+                  View details
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto px-3 py-4 relative">
-        {/* Floating Encryption Banner - Always at top of scroll area if peer is E2EE enabled */}
-        {!friend.isGroup && friend.publicKey && (
+        {/* Floating Encryption Banner */}
+        {isChatEncrypted && (
           <div className="sticky top-0 z-20 flex justify-center mb-6 pointer-events-none -mx-3">
             <div className="bg-white/70 backdrop-blur-md border border-white/50 px-4 py-1.5 rounded-full shadow-sm text-center max-w-xs pointer-events-auto">
               <p className="text-[10px] text-gray-500 font-semibold flex items-center justify-center gap-1.5 uppercase tracking-wider">
@@ -227,6 +553,7 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
                     isStoryReply={msg.isStoryReply}
                     sharedStory={msg.sharedStory}
                     isEncrypted={msg.isEncrypted}
+                    attachment={msg.attachment}
                   />
                 </React.Fragment>
               );
@@ -236,32 +563,104 @@ const MainChat = ({ friend, onToggleDetails, onBack }) => {
         <div ref={chatEndRef} />
       </div>
 
-      {/* Input Area or Not Friends Message */}
-      {(friend.isGroup || friends.some(f => f._id === friend._id)) ? (
+      {/* Input Area or Not Friends Message or Blocked Message */}
+      {isBlocked ? (
+        <div className="bg-red-50 border-t border-red-200 px-5 py-6 text-center">
+          <div className="flex flex-col items-center gap-3">
+            <Ban className="w-8 h-8 text-red-600" />
+            <div>
+              <p className="text-gray-700 font-semibold">You have blocked this user</p>
+              <p className="text-gray-500 text-sm mt-1">You won't be able to send messages to this user.</p>
+            </div>
+            <button
+              onClick={handleUnblockUser}
+              className="mt-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+            >
+              Unblock user
+            </button>
+          </div>
+        </div>
+      ) : (friend.isGroup || friends.some(f => f._id === friend._id)) ? (
         <div className="bg-white border-t border-gray-200 px-5 py-3">
           <div className="flex items-center gap-3">
             {/* Action Icons */}
             <div className="flex items-center gap-2 text-gray-400">
-              <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+              <input
+                ref={docInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z"
+                className="hidden"
+                onChange={handleAttachmentPick}
+              />
+              <input
+                ref={mediaInputRef}
+                type="file"
+                accept="image/*,video/*"
+                className="hidden"
+                onChange={handleAttachmentPick}
+              />
+              <button
+                onClick={() => docInputRef.current?.click()}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                title="Share file"
+              >
                 <FiPaperclip className="w-5 h-5" />
               </button>
-              <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+              <button
+                onClick={() => mediaInputRef.current?.click()}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                title="Share photo/video"
+              >
                 <FiImage className="w-5 h-5" />
+              </button>
+              <button
+                onClick={isRecording ? stopRecordingAudio : startRecordingAudio}
+                className={`p-2 rounded-full transition-colors ${isRecording ? "bg-red-50 text-red-600 hover:bg-red-100" : "hover:bg-gray-100"}`}
+                title={isRecording ? "Stop recording" : "Record voice message"}
+              >
+                {isRecording ? <FiStopCircle className="w-5 h-5" /> : <FiMic className="w-5 h-5" />}
               </button>
             </div>
 
             {/* Text Input */}
             <div className="flex-1 relative">
+              {isRecording && (
+                <div className="absolute -top-7 left-1 text-[11px] font-semibold text-red-500">
+                  Recording... {formatRecordingTime(recordingTime)}
+                </div>
+              )}
+              {!!recordingError && (
+                <div className="absolute -top-7 left-1 text-[11px] font-semibold text-amber-600">
+                  {recordingError}
+                </div>
+              )}
               <input
+                ref={messageInputRef}
                 className="w-full px-4 py-2.5 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all pr-10"
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder="Aa"
               />
-              <button className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setShowEmojiPicker((prev) => !prev);
+                  setTimeout(() => messageInputRef.current?.focus(), 0);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
                 <BsEmojiSmile className="w-5 h-5" />
               </button>
+              {showEmojiPicker && (
+                <div ref={emojiPickerRef} className="absolute bottom-12 right-0 z-50 shadow-xl rounded-xl overflow-hidden">
+                  <EmojiPicker
+                    onEmojiClick={handleEmojiSelect}
+                    lazyLoadEmojis={true}
+                    width={320}
+                    height={400}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Send Button */}

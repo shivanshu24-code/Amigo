@@ -11,10 +11,11 @@ export const usePostStore = create((set, get) => ({
     loading: false,
     error: null,
     showCreatePostModal: false, // For global create post modal
+    initialPostData: null, // For editing/resharing
 
     // Toggle create post modal
-    openCreatePostModal: () => set({ showCreatePostModal: true }),
-    closeCreatePostModal: () => set({ showCreatePostModal: false }),
+    openCreatePostModal: (data = null) => set({ showCreatePostModal: true, initialPostData: data }),
+    closeCreatePostModal: () => set({ showCreatePostModal: false, initialPostData: null }),
 
     // Fetch posts for a specific user
     fetchUserPosts: async (userId) => {
@@ -25,7 +26,10 @@ export const usePostStore = create((set, get) => ({
             const res = await fetch(`${API_BASE}/post/user/${userId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            if (!res.ok) throw new Error("Failed to fetch user posts");
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.message || "Failed to fetch user posts");
+            }
             const data = await res.json();
             set({ userPosts: data, loading: false });
         } catch (err) {

@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import StoryViewer from "./Story/StoryViewer.jsx";
 import AddStory from "./Story/AddStory.jsx";
 import { useStoryStore } from "../Store/StoryStore.js";
 import { useAuthStore } from "../Store/AuthStore.js";
@@ -52,36 +51,32 @@ const Story = () => {
                     />
 
                     {/* 👤 Story Avatars */}
-                    {otherStories.map(({ author, stories }) => (
-                        <div
-                            key={author._id}
-                            onClick={() => openUserStories(stories)}
-                            className="flex flex-col items-center cursor-pointer min-w-[64px]"
-                        >
-                            <div className="p-0.5 rounded-full bg-gradient-to-tr from-yellow-400 to-fuchsia-600">
-                                <Avatar
-                                    src={author.avatar}
-                                    name={author.firstname ? `${author.firstname} ${author.lastname}` : author.username}
-                                    className="w-16 h-16 rounded-full border-2 border-white text-xl"
-                                />
+                    {otherStories.map(({ author, stories }) => {
+                        const isCloseFriendStory = stories.some(s => s.visibility === "CloseFriends");
+                        return (
+                            <div
+                                key={author._id}
+                                onClick={() => openUserStories(stories)}
+                                className="flex flex-col items-center cursor-pointer min-w-[64px]"
+                            >
+                                <div className={`p-0.5 rounded-full ${isCloseFriendStory
+                                    ? "bg-gradient-to-tr from-green-400 to-green-600"
+                                    : "bg-gradient-to-tr from-yellow-400 to-fuchsia-600"
+                                    }`}>
+                                    <Avatar
+                                        src={author.avatar}
+                                        name={author.firstname ? `${author.firstname} ${author.lastname}` : author.username}
+                                        className="w-16 h-16 rounded-full border-2 border-white text-xl"
+                                    />
+                                </div>
+                                <p className="text-[11px] mt-1 text-gray-700 truncate w-16 text-center">
+                                    {author.username || "User"}
+                                </p>
                             </div>
-                            <p className="text-[11px] mt-1 text-gray-700 truncate w-16 text-center">
-                                {author.username || "User"}
-                            </p>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
-
-            {/* 📖 Story Viewer */}
-            {viewerOpen && (
-                <StoryViewer
-                    stories={viewerStories}
-                    startIndex={startIndex}
-                    onClose={closeViewer}
-                    onDelete={handleDeleteStory}
-                />
-            )}
         </>
     );
 };

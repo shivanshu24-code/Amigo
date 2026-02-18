@@ -52,10 +52,8 @@ export const initializeSocket = (server) => {
         cors: {
             origin: [
                 process.env.CLIENT_URL,
-                "http://localhost:5173",
                 "https://localhost:5173",
-                "http://10.12.7.42:5173",
-                "https://10.12.7.42:5173",
+                "http://localhost:5173",
             ],
             credentials: true,
         },
@@ -153,7 +151,7 @@ export const initializeSocket = (server) => {
         // Initiate a video call
         socket.on("initiate-call", async (data) => {
             try {
-                const { receiverId, callerName, callerAvatar } = data;
+                const { receiverId, callerName, callerAvatar, callType = "video" } = data;
 
                 if (!currentUserId || !receiverId) {
                     socket.emit("call-error", { message: "Invalid call data" });
@@ -189,10 +187,11 @@ export const initializeSocket = (server) => {
                     callerId: currentUserId,
                     callerName,
                     callerAvatar,
+                    callType,
                 });
 
                 // Notify caller that call is ringing
-                socket.emit("call-ringing", { receiverId });
+                socket.emit("call-ringing", { receiverId, callType });
 
                 console.log(`📞 Call initiated from ${currentUserId} to ${receiverId}`);
             } catch (error) {
@@ -204,7 +203,7 @@ export const initializeSocket = (server) => {
         // Accept an incoming call
         socket.on("accept-call", async (data) => {
             try {
-                const { callerId, receiverName, receiverAvatar } = data;
+                const { callerId, receiverName, receiverAvatar, callType = "video" } = data;
 
                 if (!currentUserId || !callerId) {
                     return;
@@ -215,6 +214,7 @@ export const initializeSocket = (server) => {
                     oderId: currentUserId,
                     receiverName,
                     receiverAvatar,
+                    callType,
                 });
 
                 console.log(`✅ Call accepted by ${currentUserId} from ${callerId}`);

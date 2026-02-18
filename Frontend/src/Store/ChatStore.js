@@ -1,8 +1,19 @@
 import { create } from "zustand";
 import api from "../Services/Api.js";
 import { getSocket } from "../Socket/Socket.js";
-import { encryptMessage, decryptMessage, importPublicKey } from "../Utils/CryptoUtils.js";
+import { encryptMessageForRecipients, decryptMessage } from "../Utils/CryptoUtils.js";
 import { useAuthStore } from "./AuthStore.js";
+
+const isBase64Like = (value) => {
+    if (typeof value !== "string" || !value.length) return false;
+    const normalized = value.replace(/\s+/g, "");
+    return /^[A-Za-z0-9+/=]+$/.test(normalized) && normalized.length % 4 === 0;
+};
+
+const shouldAttemptDecrypt = (text, encryptedKey, iv) => {
+    if (!text || !encryptedKey || !iv) return false;
+    return isBase64Like(text) && isBase64Like(encryptedKey) && isBase64Like(iv);
+};
 
 export const useChatStore = create((set, get) => ({
     /* ===================== STATE ===================== */
@@ -16,6 +27,8 @@ export const useChatStore = create((set, get) => ({
     isTyping: false,
     typingUserId: null,
     isMobileChatOpen: false, // Track if mobile chat is open
+    isBlocked: false, // Track if current chat user is blocked
+    hasBlockedUser: false, // Track if current user is blocked by the other person
 
     /* ===================== SET MOBILE CHAT OPEN ===================== */
     setMobileChatOpen: (isOpen) => set({ isMobileChatOpen: isOpen }),
@@ -30,6 +43,8 @@ export const useChatStore = create((set, get) => ({
             } else {
                 // 1-on-1: _id is the friend's user ID, fetch via /messages/:friendId
                 get().fetchMessages(chatOrFriend._id, false);
+                // Check block status for 1-on-1 chats
+                get().getBlockStatus(chatOrFriend._id);
             }
         }
     },
@@ -39,7 +54,40 @@ export const useChatStore = create((set, get) => ({
         set({ loading: true });
         try {
             const res = await api.get("/chat/conversations");
-            set({ conversations: res.data.data, loading: false });
+            let conversations = res.data.data || [];
+            const { privateKey, user } = useAuthStore.getState();
+            const currentUserId = user?._id;
+
+            if (privateKey && currentUserId) {
+                conversations = await Promise.all(
+                    conversations.map(async (conv) => {
+                        const last = conv.lastMessage;
+                        if (!last?.text || !last?.encryptionIV) return conv;
+
+                        const recipientEncryptedKey =
+                            last?.encryptedKeys?.[currentUserId] || last?.encryptedKey;
+                        if (!shouldAttemptDecrypt(last?.text, recipientEncryptedKey, last?.encryptionIV)) return conv;
+
+                        const decryptedText = await decryptMessage(
+                            last.text,
+                            recipientEncryptedKey,
+                            last.encryptionIV,
+                            privateKey
+                        );
+
+                        return {
+                            ...conv,
+                            lastMessage: {
+                                ...last,
+                                text: decryptedText,
+                                isEncrypted: true,
+                            },
+                        };
+                    })
+                );
+            }
+
+            set({ conversations, loading: false });
         } catch (err) {
             console.error("Failed to fetch conversations:", err);
         }
@@ -55,18 +103,19 @@ export const useChatStore = create((set, get) => ({
             const res = await api.get(url);
             let fetchedMessages = res.data.data;
 
-            // Decrypt messages if 1-on-1 and encrypted
-            if (!isGroup) {
-                const { privateKey } = useAuthStore.getState();
-                if (privateKey) {
-                    fetchedMessages = await Promise.all(fetchedMessages.map(async (msg) => {
-                        if (msg.encryptedKey && msg.encryptionIV && msg.text) {
-                            const decrypted = await decryptMessage(msg.text, msg.encryptedKey, msg.encryptionIV, privateKey);
-                            return { ...msg, text: decrypted, isEncrypted: true };
-                        }
-                        return msg;
-                    }));
-                }
+            // Decrypt messages for both 1-on-1 and group when encryption payload exists
+            const { privateKey, user } = useAuthStore.getState();
+            const currentUserId = user?._id;
+            if (privateKey && currentUserId) {
+                fetchedMessages = await Promise.all(fetchedMessages.map(async (msg) => {
+                    const recipientEncryptedKey =
+                        msg?.encryptedKeys?.[currentUserId] || msg?.encryptedKey;
+                    if (shouldAttemptDecrypt(msg?.text, recipientEncryptedKey, msg?.encryptionIV)) {
+                        const decrypted = await decryptMessage(msg.text, recipientEncryptedKey, msg.encryptionIV, privateKey);
+                        return { ...msg, text: decrypted, isEncrypted: true };
+                    }
+                    return msg;
+                }));
             }
 
             set({ messages: fetchedMessages, messagesLoading: false });
@@ -101,16 +150,48 @@ export const useChatStore = create((set, get) => ({
             const payload = { text };
             if (currentChat.isGroup) {
                 payload.conversationId = currentChat._id;
+                const { e2eeEnabled } = useAuthStore.getState();
+                const participants = currentChat.participants || [];
+                const canEncryptGroup =
+                    e2eeEnabled &&
+                    participants.length > 0 &&
+                    participants.every((p) => Boolean(p?.publicKey));
+
+                if (canEncryptGroup) {
+                    try {
+                        const recipients = participants
+                            .filter((p) => p?._id && p?.publicKey)
+                            .map((p) => ({ userId: String(p._id), publicKeyB64: p.publicKey }));
+
+                        const encrypted = await encryptMessageForRecipients(text.trim(), recipients);
+                        payload.text = encrypted.cipherText;
+                        payload.encryptedKeys = encrypted.encryptedKeys;
+                        payload.encryptionIV = encrypted.iv;
+                    } catch (cryptoErr) {
+                        console.error("Group encryption failed, sending as plain text:", cryptoErr);
+                    }
+                }
             } else {
                 // E2EE for 1-on-1
                 const friend = currentChat.friend || currentChat;
-                if (friend.publicKey) {
+                const { e2eeEnabled, user } = useAuthStore.getState();
+                const currentUserId = user?._id;
+                const ownPublicKey =
+                    (currentUserId && localStorage.getItem(`e2ee_public_key_${currentUserId}`)) ||
+                    localStorage.getItem("e2ee_public_key");
+
+                if (friend.publicKey && ownPublicKey && e2eeEnabled) {
                     try {
-                        const publicKey = await importPublicKey(friend.publicKey);
-                        const encrypted = await encryptMessage(text.trim(), publicKey);
+                        const recipients = [
+                            { userId: String(friend._id), publicKeyB64: friend.publicKey },
+                            { userId: String(currentUserId), publicKeyB64: ownPublicKey },
+                        ];
+                        const encrypted = await encryptMessageForRecipients(text.trim(), recipients);
 
                         payload.text = encrypted.cipherText;
-                        payload.encryptedKey = encrypted.encryptedKey;
+                        payload.encryptedKeys = encrypted.encryptedKeys;
+                        // Legacy fallback for older decrypt path in some places
+                        payload.encryptedKey = encrypted.encryptedKeys?.[String(friend._id)];
                         payload.encryptionIV = encrypted.iv;
                     } catch (cryptoErr) {
                         console.error("Encryption failed, sending as plain text:", cryptoErr);
@@ -144,6 +225,96 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    /* ===================== SEND ATTACHMENT ===================== */
+    sendAttachment: async (file) => {
+        const { currentChat, messages } = get();
+        if (!currentChat || !file) return false;
+
+        const tempId = `temp-file-${Date.now()}`;
+        const localUrl = URL.createObjectURL(file);
+        const optimisticMessage = {
+            _id: tempId,
+            sender: { _id: "me" },
+            receiver: currentChat._id,
+            createdAt: new Date().toISOString(),
+            read: false,
+            sending: true,
+            attachment: {
+                url: localUrl,
+                fileName: file.name,
+                mimeType: file.type,
+                fileSize: file.size,
+                resourceType: file.type.startsWith("image/")
+                    ? "image"
+                    : file.type.startsWith("video/")
+                        ? "video"
+                        : file.type.startsWith("audio/")
+                            ? "audio"
+                        : "raw",
+            },
+        };
+
+        set({ messages: [...messages, optimisticMessage] });
+
+        let shouldRevokeLocalUrl = true;
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            if (currentChat.isGroup) {
+                formData.append("conversationId", currentChat._id);
+            }
+
+            const sendToId = currentChat._id;
+            const res = await api.post(`/chat/send-attachment/${sendToId}`, formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+
+            const serverMessage = res.data.data || {};
+            const fallbackAttachment = {
+                url: localUrl,
+                fileName: file.name,
+                mimeType: file.type || "application/octet-stream",
+                fileSize: file.size,
+                resourceType: file.type.startsWith("image/")
+                    ? "image"
+                    : file.type.startsWith("video/")
+                        ? "video"
+                        : file.type.startsWith("audio/")
+                            ? "audio"
+                            : "raw",
+            };
+            const newMessage = {
+                ...serverMessage,
+                attachment: serverMessage?.attachment?.url
+                    ? serverMessage.attachment
+                    : fallbackAttachment,
+            };
+            // Keep local blob URL alive when server doesn't return a playable URL.
+            if (!serverMessage?.attachment?.url) {
+                shouldRevokeLocalUrl = false;
+            }
+            set((state) => ({
+                messages: state.messages.map((msg) =>
+                    msg._id === tempId ? { ...newMessage, sending: false } : msg
+                ),
+            }));
+            get().updateConversationWithMessage(newMessage);
+            return true;
+        } catch (err) {
+            set((state) => ({
+                messages: state.messages.map((msg) =>
+                    msg._id === tempId ? { ...msg, sending: false, failed: true } : msg
+                ),
+                error: err.response?.data?.message || "Failed to send attachment",
+            }));
+            return false;
+        } finally {
+            if (shouldRevokeLocalUrl) {
+                setTimeout(() => URL.revokeObjectURL(localUrl), 5000);
+            }
+        }
+    },
+
     /* ===================== UPDATE CONVERSATION WITH NEW MESSAGE ===================== */
     updateConversationWithMessage: (message) => {
         set((state) => {
@@ -173,13 +344,14 @@ export const useChatStore = create((set, get) => ({
         const { currentChat } = get();
         let message = messageData.message;
 
-        // Decrypt if encrypted and not group
-        if (!messageData.isGroup && message.encryptedKey && message.encryptionIV) {
-            const { privateKey } = useAuthStore.getState();
-            if (privateKey) {
-                const decrypted = await decryptMessage(message.text, message.encryptedKey, message.encryptionIV, privateKey);
-                message = { ...message, text: decrypted, isEncrypted: true };
-            }
+        // Decrypt if encryption payload exists (works for 1-on-1 and groups)
+        const { privateKey, user } = useAuthStore.getState();
+        const currentUserId = user?._id;
+        const recipientEncryptedKey =
+            message?.encryptedKeys?.[currentUserId] || message?.encryptedKey;
+        if (privateKey && shouldAttemptDecrypt(message?.text, recipientEncryptedKey, message?.encryptionIV)) {
+            const decrypted = await decryptMessage(message.text, recipientEncryptedKey, message.encryptionIV, privateKey);
+            message = { ...message, text: decrypted, isEncrypted: true };
         }
 
         // Check if message belongs to the current chat
@@ -415,6 +587,51 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    /* ===================== BLOCK USER ===================== */
+    blockUser: async (userId) => {
+        try {
+            const res = await api.post(`/chat/block/${userId}`);
+            if (res.data.success) {
+                set({ isBlocked: true });
+                return { success: true, message: res.data.message };
+            }
+            return { success: false, message: res.data.message };
+        } catch (err) {
+            console.error("Failed to block user:", err);
+            return { success: false, message: err.response?.data?.message || "Failed to block user" };
+        }
+    },
+
+    /* ===================== UNBLOCK USER ===================== */
+    unblockUser: async (userId) => {
+        try {
+            const res = await api.post(`/chat/unblock/${userId}`);
+            if (res.data.success) {
+                set({ isBlocked: false });
+                return { success: true, message: res.data.message };
+            }
+            return { success: false, message: res.data.message };
+        } catch (err) {
+            console.error("Failed to unblock user:", err);
+            return { success: false, message: err.response?.data?.message || "Failed to unblock user" };
+        }
+    },
+
+    /* ===================== GET BLOCK STATUS ===================== */
+    getBlockStatus: async (userId) => {
+        try {
+            const res = await api.get(`/chat/block-status/${userId}`);
+            if (res.data.success) {
+                set({ isBlocked: res.data.isBlocked });
+                return res.data.isBlocked;
+            }
+            return false;
+        } catch (err) {
+            console.error("Failed to get block status:", err);
+            return false;
+        }
+    },
+
     /* ===================== RESET STORE (on logout) ===================== */
     resetStore: () => {
         set({
@@ -428,6 +645,8 @@ export const useChatStore = create((set, get) => ({
             isTyping: false,
             typingUserId: null,
             isMobileChatOpen: false,
+            isBlocked: false,
+            hasBlockedUser: false,
         });
     },
 }));

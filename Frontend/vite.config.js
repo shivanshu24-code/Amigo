@@ -11,10 +11,10 @@ export default defineConfig({
     react(),
     tailwindcss(),
     nodePolyfills({ protocolImports: true }),
-    basicSsl(), // Enables HTTPS with self-signed certificate
+    // basicSsl(), // Enables HTTPS with self-signed certificate
   ],
   server: {
-    https: true, // Enable HTTPS
+    https: false, // Disable HTTPS
     host: true,  // Listen on all addresses
   },
   define: {

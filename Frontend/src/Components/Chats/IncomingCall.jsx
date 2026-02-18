@@ -64,7 +64,7 @@ const IncomingCall = () => {
 
                         {/* Call Status */}
                         <p className="text-gray-500 mt-1 animate-pulse">
-                            Incoming video call...
+                            {currentCall?.callType === "voice" ? "Incoming voice call..." : "Incoming video call..."}
                         </p>
 
                         {/* Action Buttons */}

@@ -38,9 +38,39 @@ const userschema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "Post"
     }],
+    closeFriends: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    }],
+    hiddenStoryFrom: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    }],
+    blockedUsers: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    }],
+    blockedFormerFriends: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    }],
     publicKey: {
         type: String,
         default: null
+    },
+    isPrivate: {
+        type: Boolean,
+        default: false
+    },
+    tagInStoryPermission: {
+        type: String,
+        enum: ["anyone", "friends"],
+        default: "anyone"
+    },
+    mentionPermission: {
+        type: String,
+        enum: ["anyone", "friends"],
+        default: "anyone"
     }
 }, { timestamps: true })
 export default mongoose.model("User", userschema)

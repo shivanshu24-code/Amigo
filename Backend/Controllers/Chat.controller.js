@@ -3,6 +3,8 @@ import Conversation from "../Models/Conversation.model.js";
 import User from "../Models/User.model.js";
 import Post from "../Models/Post.model.js";
 import { emitToUser } from "../Socket/SocketManager.js";
+import cloudinary from "../Config/Cloudinary.js";
+import fs from "fs";
 
 /**
  * Helper function to check if two users are friends
@@ -39,7 +41,7 @@ export const sendMessage = async (req, res) => {
     try {
         const senderId = req.user._id;
         const targetId = req.params.userId; // This can be a userId or conversationId for groups
-        const { text, isStoryReply, sharedStory, conversationId, encryptedKey, encryptionIV } = req.body;
+        const { text, isStoryReply, sharedStory, conversationId, encryptedKey, encryptedKeys, encryptionIV } = req.body;
 
         // Validate input
         if ((!text || !text.trim()) && !sharedStory) {
@@ -78,6 +80,29 @@ export const sendMessage = async (req, res) => {
             });
         }
 
+        // Check if blocked (only for 1-on-1 chats, not group chats)
+        if (!conversation.isGroup) {
+            const actualReceiverId = receiverId || conversation.participants.find(p => p.toString() !== senderId.toString());
+
+            // Check if sender has blocked receiver
+            const sender = await User.findById(senderId);
+            if (sender && sender.blockedUsers.includes(actualReceiverId)) {
+                return res.status(403).json({
+                    success: false,
+                    message: "You have blocked this user"
+                });
+            }
+
+            // Check if receiver has blocked sender
+            const receiver = await User.findById(actualReceiverId);
+            if (receiver && receiver.blockedUsers.includes(senderId)) {
+                return res.status(403).json({
+                    success: false,
+                    message: "This user has blocked you"
+                });
+            }
+        }
+
         // Create message
         const message = await Message.create({
             sender: senderId,
@@ -87,6 +112,7 @@ export const sendMessage = async (req, res) => {
             isStoryReply: isStoryReply || false,
             sharedStory: sharedStory || undefined,
             encryptedKey,
+            encryptedKeys,
             encryptionIV,
         });
 
@@ -135,6 +161,148 @@ export const sendMessage = async (req, res) => {
 };
 
 /**
+ * Send an attachment message to a friend or group
+ * @route POST /api/chat/send-attachment/:userId
+ */
+export const sendAttachment = async (req, res) => {
+    try {
+        const senderId = req.user._id;
+        const targetId = req.params.userId;
+        const { conversationId } = req.body;
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: "No file uploaded",
+            });
+        }
+
+        let conversation;
+        let receiverId = null;
+
+        if (conversationId) {
+            conversation = await Conversation.findOne({
+                _id: conversationId,
+                participants: senderId,
+            });
+        } else {
+            receiverId = targetId;
+            const receiver = await User.findById(receiverId);
+            if (!receiver) {
+                return res.status(404).json({
+                    success: false,
+                    message: "User not found",
+                });
+            }
+            conversation = await getOrCreateConversation(senderId, receiverId);
+        }
+
+        if (!conversation) {
+            return res.status(404).json({
+                success: false,
+                message: "Conversation not found",
+            });
+        }
+
+        if (!conversation.isGroup) {
+            const actualReceiverId = receiverId || conversation.participants.find(p => p.toString() !== senderId.toString());
+
+            const sender = await User.findById(senderId);
+            if (sender && sender.blockedUsers.includes(actualReceiverId)) {
+                return res.status(403).json({
+                    success: false,
+                    message: "You have blocked this user"
+                });
+            }
+
+            const receiver = await User.findById(actualReceiverId);
+            if (receiver && receiver.blockedUsers.includes(senderId)) {
+                return res.status(403).json({
+                    success: false,
+                    message: "This user has blocked you"
+                });
+            }
+        }
+
+        let uploaded;
+        let resourceType = "raw";
+        try {
+            resourceType = req.file.mimetype.startsWith("image/")
+                ? "image"
+                : req.file.mimetype.startsWith("audio/")
+                    ? "audio"
+                    : req.file.mimetype.startsWith("video/")
+                        ? "video"
+                        : "raw";
+
+            const cloudinaryResourceType = req.file.mimetype.startsWith("audio/")
+                ? "video"
+                : resourceType;
+            const uploadOptions = {
+                folder: "amigo/chat",
+                resource_type: cloudinaryResourceType,
+            };
+            // Normalize voice notes to mp3 for reliable playback across browsers/devices.
+            if (req.file.mimetype.startsWith("audio/")) {
+                uploadOptions.format = "mp3";
+            }
+
+            uploaded = await cloudinary.uploader.upload(req.file.path, uploadOptions);
+        } finally {
+            if (req.file?.path && fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path);
+            }
+        }
+
+        const message = await Message.create({
+            sender: senderId,
+            receiver: conversation.isGroup ? undefined : (receiverId || conversation.participants.find(p => p.toString() !== senderId.toString())),
+            conversationId: conversation._id,
+            attachment: {
+                url: uploaded.secure_url,
+                fileName: req.file.originalname,
+                mimeType: resourceType === "audio" ? "audio/mpeg" : req.file.mimetype,
+                fileSize: req.file.size,
+                resourceType,
+            },
+        });
+
+        conversation.lastMessage = message._id;
+        await conversation.save();
+
+        await message.populate("sender", "username avatar");
+
+        if (conversation.isGroup) {
+            const otherParticipants = conversation.participants.filter(p => p.toString() !== senderId.toString());
+            const emitData = {
+                message: message,
+                conversationId: conversation._id,
+            };
+            const { emitToUsers } = await import("../Socket/SocketManager.js");
+            emitToUsers(otherParticipants, "new-message", emitData);
+        } else {
+            const otherParticipantId = conversation.participants.find(p => p.toString() !== senderId.toString());
+            emitToUser(otherParticipantId, "new-message", {
+                message: message,
+                conversationId: conversation._id,
+            });
+        }
+
+        return res.status(201).json({
+            success: true,
+            message: "Attachment sent successfully",
+            data: message,
+        });
+    } catch (error) {
+        console.error("Send Attachment Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while sending attachment",
+            error: error.message,
+        });
+    }
+};
+/**
  * Get all conversations for the current user
  * @route GET /api/chat/conversations
  */
@@ -171,8 +339,29 @@ export const getConversations = async (req, res) => {
         const profileMap = new Map();
         profiles.forEach(p => profileMap.set(p.user.toString(), p));
 
+        // Get unread count for each conversation
+        const Message = (await import("../Models/Message.model.js")).default;
+        const unreadCounts = await Promise.all(
+            conversations.map(async (conv) => {
+                const unreadCount = await Message.countDocuments({
+                    conversationId: conv._id,
+                    receiver: userId,
+                    read: false,
+                    isDeletedForEveryone: { $ne: true }
+                });
+                return { conversationId: conv._id.toString(), unreadCount };
+            })
+        );
+
+        const unreadMap = new Map();
+        unreadCounts.forEach(item => {
+            unreadMap.set(item.conversationId, item.unreadCount);
+        });
+
         // Format conversations
         const formattedConversations = conversations.map(conv => {
+            const unreadCount = unreadMap.get(conv._id.toString()) || 0;
+            
             if (conv.isGroup) {
                 return {
                     _id: conv._id,
@@ -185,6 +374,7 @@ export const getConversations = async (req, res) => {
                         : (conv.groupAdmin ? [conv.groupAdmin] : []),
                     lastMessage: conv.lastMessage,
                     updatedAt: conv.updatedAt,
+                    unreadCount: unreadCount,
                     participants: conv.participants.map(p => ({
                         ...p._doc,
                         avatar: profileMap.get(p._id.toString())?.avatar || p.avatar
@@ -208,6 +398,7 @@ export const getConversations = async (req, res) => {
                     },
                     lastMessage: conv.lastMessage,
                     updatedAt: conv.updatedAt,
+                    unreadCount: unreadCount,
                 };
             }
         }).filter(c => c !== null);
@@ -968,3 +1159,138 @@ export const clearChat = async (req, res) => {
         });
     }
 };
+
+/**
+ * Block a user
+ * @route POST /api/chat/block/:userId
+ */
+export const blockUser = async (req, res) => {
+    try {
+        const currentUserId = req.user._id;
+        const targetUserId = req.params.userId;
+
+        // Can't block yourself
+        if (currentUserId.toString() === targetUserId) {
+            return res.status(400).json({
+                success: false,
+                message: "You cannot block yourself"
+            });
+        }
+
+        const user = await User.findById(currentUserId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Check if already blocked
+        const isAlreadyBlocked = user.blockedUsers.includes(targetUserId);
+        if (isAlreadyBlocked) {
+            return res.status(400).json({
+                success: false,
+                message: "User is already blocked"
+            });
+        }
+
+        // Add to blocked list
+        user.blockedUsers.push(targetUserId);
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: "User blocked successfully",
+            isBlocked: true
+        });
+    } catch (error) {
+        console.error("Block user error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while blocking user",
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Unblock a user
+ * @route POST /api/chat/unblock/:userId
+ */
+export const unblockUser = async (req, res) => {
+    try {
+        const currentUserId = req.user._id;
+        const targetUserId = req.params.userId;
+
+        // Can't unblock yourself
+        if (currentUserId.toString() === targetUserId) {
+            return res.status(400).json({
+                success: false,
+                message: "You cannot unblock yourself"
+            });
+        }
+
+        const user = await User.findById(currentUserId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Remove from blocked list
+        user.blockedUsers = user.blockedUsers.filter(
+            id => id.toString() !== targetUserId.toString()
+        );
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: "User unblocked successfully",
+            isBlocked: false
+        });
+    } catch (error) {
+        console.error("Unblock user error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while unblocking user",
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Check if a user is blocked
+ * @route GET /api/chat/block-status/:userId
+ */
+export const getBlockStatus = async (req, res) => {
+    try {
+        const currentUserId = req.user._id;
+        const targetUserId = req.params.userId;
+
+        const currentUser = await User.findById(currentUserId);
+        if (!currentUser) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        const isBlocked = currentUser.blockedUsers.some(
+            id => id.toString() === targetUserId.toString()
+        );
+
+        res.status(200).json({
+            success: true,
+            isBlocked: isBlocked
+        });
+    } catch (error) {
+        console.error("Get block status error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while checking block status",
+            error: error.message
+        });
+    }
+};
+

@@ -12,6 +12,8 @@ const ChatPage = () => {
 
   const [showFriendsList, setShowFriendsList] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
+  const [detailsFocusSection, setDetailsFocusSection] = useState("media")
+  const [detailsOnlySection, setDetailsOnlySection] = useState(null)
   const [isGroupModalOpen, setGroupModalOpen] = useState(false)
 
   useEffect(() => {
@@ -46,6 +48,12 @@ const ChatPage = () => {
 
   const toggleDetails = () => {
     setShowDetails(!showDetails)
+  }
+
+  const openDetails = (section = "media", onlySection = null) => {
+    setDetailsFocusSection(section)
+    setDetailsOnlySection(onlySection)
+    setShowDetails(true)
   }
 
   const handleBack = () => {
@@ -84,6 +92,8 @@ const ChatPage = () => {
       >
         <MainChat
           friend={currentChat}
+          detailsComponent={ChatDetails}
+          onOpenDetails={openDetails}
           onToggleDetails={toggleDetails}
           onBack={handleBack}
         />
@@ -94,6 +104,8 @@ const ChatPage = () => {
         <div className="hidden lg:flex h-full flex-shrink-0">
           <ChatDetails
             friend={currentChat}
+            focusSection={detailsFocusSection}
+            onlySection={detailsOnlySection}
             onClose={() => setShowDetails(false)}
           />
         </div>

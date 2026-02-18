@@ -1,15 +1,19 @@
-import { X } from "lucide-react";
+import { X, Archive } from "lucide-react";
 import { useState } from "react";
+import { usePostStore } from "../../Store/PostStore.js";
 import MediaUploader from "./MediaUploader.jsx";
 import PostActions from "./PostActions.jsx";
 import PostSubmitButton from "./PostSubmit.jsx";
 const CreatePostModal = ({ onClose }) => {
-  const [media, setMedia] = useState(null);
-  const [caption, setCaption] = useState("");
-  const [visibility, setVisibility] = useState("Connection");
-  const [emoji, setEmoji] = useState("")
-  const [locations, setLocation] = useState("")
-  const [aspectRatio, setAspectRatio] = useState("1:1")
+  const { initialPostData } = usePostStore();
+
+  const [media, setMedia] = useState(initialPostData?.media || null);
+  const [caption, setCaption] = useState(initialPostData?.caption || "");
+  const [visibility, setVisibility] = useState(initialPostData?.visibility || "Connection");
+  const [emoji, setEmoji] = useState("");
+  const [locations, setLocation] = useState("");
+  const [aspectRatio, setAspectRatio] = useState(initialPostData?.aspectRatio || "1:1");
+  const [isArchived, setIsArchived] = useState(false);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -51,6 +55,25 @@ const CreatePostModal = ({ onClose }) => {
 
         />
 
+        {/* 📦 ARCHIVE TOGGLE */}
+        <div className="mt-4 flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${isArchived ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'}`}>
+              <Archive size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Archive directly</p>
+              <p className="text-[10px] text-gray-500">Only you can see this post</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsArchived(!isArchived)}
+            className={`w-10 h-5 rounded-full relative transition-colors duration-200 ${isArchived ? 'bg-indigo-600' : 'bg-gray-300'}`}
+          >
+            <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ${isArchived ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
+
         {/* 🚀 SUBMIT */}
         <PostSubmitButton
           caption={caption}
@@ -58,6 +81,7 @@ const CreatePostModal = ({ onClose }) => {
           visibility={visibility}
 
           aspectRatio={aspectRatio}
+          isArchived={isArchived}
           onClose={onClose}
 
 

@@ -7,7 +7,8 @@ const PostSubmitButton = ({
   visibility,
   emoji,
   onClose,
-  aspectRatio
+  aspectRatio,
+  isArchived
 }) => {
   const { startUpload } = useUploadStore();
 
@@ -18,7 +19,8 @@ const PostSubmitButton = ({
       mediaFile: media,
       visibility,
       aspectRatio,
-      emoji
+      emoji,
+      isArchived
     });
 
     // Close immediately

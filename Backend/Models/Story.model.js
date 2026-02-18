@@ -41,6 +41,15 @@ const storySchema = new mongoose.Schema({
         type: Date,
         required: true,
         index: { expires: 1 }
+    },
+    isArchived: {
+        type: Boolean,
+        default: false
+    },
+    visibility: {
+        type: String,
+        enum: ["Everyone", "CloseFriends"],
+        default: "Everyone"
     }
 }, { timestamps: true });
 

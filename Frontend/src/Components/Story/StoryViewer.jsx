@@ -204,6 +204,12 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
               className="w-8 h-8 rounded-full object-cover ring-2 ring-white/30"
             />
             <span className="text-white text-sm font-medium">{story.author?.username}</span>
+            {story.visibility === "CloseFriends" && (
+              <div className="flex items-center gap-1 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg">
+                <Star size={10} className="fill-white" />
+                <span>Close Friends</span>
+              </div>
+            )}
             <span className="text-white/60 text-xs">
               {new Date(story.createdAt).toLocaleDateString()}
             </span>
@@ -387,14 +393,15 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
               )}
             </div>
           </div>
-          {/* 📤 Share Modal */}
-          {showShareModal && (
-            <ShareModal
-              storyId={story._id}
-              onClose={() => setShowShareModal(false)}
-            />
-          )}
         </div>
+      )}
+
+      {/* 📤 Share Modal */}
+      {showShareModal && (
+        <ShareModal
+          storyId={story._id}
+          onClose={() => setShowShareModal(false)}
+        />
       )}
     </div>
   );

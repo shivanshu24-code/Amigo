@@ -8,6 +8,8 @@ import {
     getFriends,
     removeFriend,
     getSentRequests,
+    getCloseFriends,
+    toggleCloseFriend,
 } from "../Controllers/Friend.controller.js";
 
 const router = express.Router();
@@ -24,6 +26,10 @@ router.put("/reject/:requestId", rejectFriendRequest);
 router.get("/requests", getFriendRequests);
 router.get("/sent", getSentRequests);
 router.get("/", getFriends);
+router.get("/close-friend", getCloseFriends);
+
+// Toggle Close Friend
+router.post("/close-friend/:userId", toggleCloseFriend);
 
 // Remove friend
 router.delete("/:userId", removeFriend);

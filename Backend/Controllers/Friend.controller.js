@@ -505,3 +505,95 @@ export const getSentRequests = async (req, res) => {
         });
     }
 };
+/**
+ * Get all close friends of the current user
+ * @route GET /api/friends/close-friend
+ */
+export const getCloseFriends = async (req, res) => {
+    try {
+        const userId = req.user._id;
+
+        const user = await User.findById(userId).populate({
+            path: "closeFriends",
+            select: "username email avatar firstname lastname isVerified publicKey",
+            populate: {
+                path: "avatar", // In case avatar is a ref, but here looks like string in User.model
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            count: user.closeFriends.length,
+            data: user.closeFriends,
+        });
+    } catch (error) {
+        console.error("Get Close Friends Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while fetching close friends",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * Toggle close friend status for a user
+ * @route POST /api/friends/close-friend/:userId
+ */
+export const toggleCloseFriend = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const targetUserId = req.params.userId;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        // Check if user is even a friend first
+        const isFriend = user.friends.includes(targetUserId);
+        if (!isFriend) {
+            return res.status(400).json({
+                success: false,
+                message: "User must be your friend to be added to close friends",
+            });
+        }
+
+        const isCloseFriend = user.closeFriends.includes(targetUserId);
+
+        let update;
+        if (isCloseFriend) {
+            // Remove
+            update = { $pull: { closeFriends: targetUserId } };
+        } else {
+            // Add
+            update = { $addToSet: { closeFriends: targetUserId } };
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(userId, update, { new: true });
+
+        res.status(200).json({
+            success: true,
+            isCloseFriend: !isCloseFriend,
+            message: isCloseFriend ? "Removed from close friends" : "Added to close friends",
+            data: updatedUser.closeFriends
+        });
+    } catch (error) {
+        console.error("Toggle Close Friend Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while toggling close friend",
+            error: error.message,
+        });
+    }
+};

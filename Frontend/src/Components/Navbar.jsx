@@ -310,8 +310,10 @@ const Navbar = () => {
                   <button onClick={() => { navigate("/profile"); setShowProfileMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition">
                     <User className="w-4 h-4" /> Profile
                   </button>
-                  <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition">
-                    <Settings className="w-4 h-4" /> Settings
+                  <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition"
+                  onClick={()=>{navigate("/settings");setShowProfileMenu(false)}}
+                  >
+                    <Settings className="w-4 h-4"  /> Settings
                   </button>
                   <button
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition"

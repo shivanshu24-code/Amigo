@@ -18,6 +18,15 @@ export const useStoryStore = create((set, get) => ({
     currentViewers: [],
     viewersLoading: false,
 
+    // Create Story modal state
+    showCreateStoryModal: false,
+    initialStoryData: null,
+
+    // Story settings state
+    hiddenStoryUsers: [],
+    settingsLoading: false,
+    settingsError: null,
+
     // Fetch all stories
     fetchStories: async () => {
         set({ loading: true, error: null });
@@ -44,7 +53,8 @@ export const useStoryStore = create((set, get) => ({
                 headers: { Authorization: `Bearer ${token}` },
                 body: formData,
             });
-            if (!res.ok) throw new Error("Failed to create story");
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || "Failed to create story");
             // Refetch stories
             get().fetchStories();
             return { success: true };
@@ -137,6 +147,63 @@ export const useStoryStore = create((set, get) => ({
         set({ viewerOpen: false, viewerStories: [], startIndex: 0 });
     },
 
+    openCreateStoryModal: (data = null) => {
+        set({ showCreateStoryModal: true, initialStoryData: data });
+    },
+
+    closeCreateStoryModal: () => {
+        set({ showCreateStoryModal: false, initialStoryData: null });
+    },
+
+    // Fetch hidden story users
+    fetchHiddenStoryUsers: async () => {
+        set({ settingsLoading: true, settingsError: null });
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_BASE}/story/settings/hidden`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) throw new Error("Failed to fetch hidden story users");
+            const data = await res.json();
+            set({ hiddenStoryUsers: data.data || [], settingsLoading: false });
+            return { success: true, data: data.data };
+        } catch (err) {
+            console.error("Fetch hidden story users error:", err);
+            set({ settingsLoading: false, settingsError: err.message });
+            return { success: false, message: err.message };
+        }
+    },
+
+    // Toggle hiding story from a user
+    toggleHideStoryFromUser: async (userId) => {
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_BASE}/story/settings/hide/${userId}`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            if (res.ok) {
+                // Update local state
+                set((state) => {
+                    const isNowHidden = data.isHidden;
+                    if (isNowHidden) {
+                        return { hiddenStoryUsers: [...state.hiddenStoryUsers, data.data[data.data.length - 1]] };
+                    } else {
+                        return { hiddenStoryUsers: state.hiddenStoryUsers.filter(u => (u._id || u) !== userId) };
+                    }
+                });
+                // Refetch to ensure consistency
+                await get().fetchHiddenStoryUsers();
+                return { success: true, isHidden: data.isHidden };
+            }
+            return { success: false, message: data.message };
+        } catch (err) {
+            console.error("Toggle hide story error:", err);
+            return { success: false, message: "Failed to toggle story visibility" };
+        }
+    },
+
     // Reset store
     reset: () =>
         set({
@@ -149,6 +216,8 @@ export const useStoryStore = create((set, get) => ({
             viewersModalOpen: false,
             currentViewers: [],
             viewersLoading: false,
+            hiddenStoryUsers: [],
+            settingsLoading: false,
+            settingsError: null,
         }),
 }));
-

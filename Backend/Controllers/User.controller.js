@@ -1,5 +1,6 @@
 import User from "../Models/User.model.js";
 import mongoose from "mongoose";
+import FriendRequest from "../Models/FriendRequest.model.js";
 
 /**
  * Fetch all users from the database
@@ -22,7 +23,7 @@ export const getAllUsers = async (req, res) => {
                     preserveNullAndEmptyArrays: true
                 }
             },
-            
+
             {
                 $project: {
                     _id: 1,
@@ -37,7 +38,8 @@ export const getAllUsers = async (req, res) => {
                     year: "$profile.year",
                     interest: "$profile.interest",
                     friends: 1,
-                    hasProfile: 1
+                    hasProfile: 1,
+                    isPrivate: 1
                 }
             }
         ]);
@@ -93,7 +95,8 @@ export const getUserById = async (req, res) => {
                     year: "$profile.year",
                     interest: "$profile.interest",
                     friends: 1,
-                    hasProfile: 1
+                    hasProfile: 1,
+                    isPrivate: 1
                 }
             }
         ]);
@@ -112,6 +115,151 @@ export const getUserById = async (req, res) => {
             success: false,
             message: "Server error while fetching user",
             error: error.message
+        });
+    }
+};
+
+/**
+ * Block a user
+ * @route POST /api/users/block/:userId
+ */
+export const blockUser = async (req, res) => {
+    try {
+        const currentUserId = req.user._id;
+        const targetUserId = req.params.userId;
+
+        if (currentUserId.toString() === targetUserId) {
+            return res.status(400).json({
+                success: false,
+                message: "You cannot block yourself"
+            });
+        }
+
+        const currentUser = await User.findById(currentUserId).select("friends");
+        const targetUser = await User.findById(targetUserId).select("friends");
+        if (!targetUser) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        const wasFriend = (currentUser?.friends || []).some(
+            (friendId) => friendId.toString() === targetUserId
+        );
+
+        const blockerUpdate = {
+            $addToSet: {
+                blockedUsers: targetUserId,
+                ...(wasFriend ? { blockedFormerFriends: targetUserId } : {})
+            },
+            $pull: {
+                friends: targetUserId,
+                closeFriends: targetUserId
+            }
+        };
+        await User.findByIdAndUpdate(currentUserId, blockerUpdate);
+
+        await User.findByIdAndUpdate(targetUserId, {
+            $pull: {
+                friends: currentUserId,
+                closeFriends: currentUserId
+            }
+        });
+
+        await FriendRequest.deleteMany({
+            $or: [
+                { sender: currentUserId, receiver: targetUserId },
+                { sender: targetUserId, receiver: currentUserId }
+            ]
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "User blocked successfully"
+        });
+    } catch (error) {
+        console.error("BLOCK USER ERROR:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to block user"
+        });
+    }
+};
+
+/**
+ * Unblock a user
+ * @route DELETE /api/users/block/:userId
+ */
+export const unblockUser = async (req, res) => {
+    try {
+        const currentUserId = req.user._id;
+        const targetUserId = req.params.userId;
+
+        const currentUser = await User.findById(currentUserId).select("blockedFormerFriends");
+        const wasFriendBeforeBlock = (currentUser?.blockedFormerFriends || []).some(
+            (id) => id.toString() === targetUserId
+        );
+
+        await User.findByIdAndUpdate(currentUserId, {
+            $pull: {
+                blockedUsers: targetUserId,
+                blockedFormerFriends: targetUserId
+            }
+        });
+
+        // Restore friendship automatically if they were friends before block.
+        if (wasFriendBeforeBlock) {
+            await User.findByIdAndUpdate(currentUserId, {
+                $addToSet: { friends: targetUserId }
+            });
+            await User.findByIdAndUpdate(targetUserId, {
+                $addToSet: { friends: currentUserId }
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: wasFriendBeforeBlock
+                ? "User unblocked and friendship restored"
+                : "User unblocked successfully",
+            restoredFriendship: wasFriendBeforeBlock
+        });
+    } catch (error) {
+        console.error("UNBLOCK USER ERROR:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to unblock user"
+        });
+    }
+};
+
+/**
+ * Get blocked users
+ * @route GET /api/users/blocked
+ */
+export const getBlockedUsers = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id)
+            .populate("blockedUsers", "username avatar email")
+            .lean();
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: user.blockedUsers || []
+        });
+    } catch (error) {
+        console.error("GET BLOCKED USERS ERROR:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to fetch blocked users"
         });
     }
 };

@@ -50,6 +50,9 @@ export const login = async (req, res) => {
         username: user.username,
         email: user.email,
         hasProfile: user.hasProfile,
+        isPrivate: user.isPrivate,
+        tagInStoryPermission: user.tagInStoryPermission || "anyone",
+        mentionPermission: user.mentionPermission || "anyone",
         avatar: userAvatar,
         savedPosts: user.savedPosts || [],
       },
@@ -94,9 +97,13 @@ export const signup = async (req, res) => {
     // localStorage.setItem("pending Email",email)
     const otpCode = crypto.randomInt(100000, 999999).toString();
 
+    // Keep only the latest OTP for this user to avoid stale-code conflicts
+    await Otp.deleteMany({ userId: user._id });
+
     await Otp.create({
       userId: user._id,
       otp: otpCode,
+      type: "EMAIL_VERIFY",
       expiresAt: Date.now() + 5 * 60 * 1000,
     });
 
@@ -204,7 +211,7 @@ export const setPassword = async (req, res) => {
 /* ===================== CHECK AUTH ===================== */
 export const checkAuth = async (req, res) => {
   const user = await User.findById(req.user._id).select(
-    "_id email username hasProfile savedPosts"
+    "_id email username hasProfile savedPosts isPrivate tagInStoryPermission mentionPermission"
   );
 
   let avatar = null;
@@ -232,6 +239,79 @@ export const logout = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Logout failed",
+    });
+  }
+};
+
+export const updatePrivacy = async (req, res) => {
+  try {
+    const userId = (req.user?._id || req.user?.id);
+    const { isPrivate } = req.body;
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { isPrivate },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Account is now ${isPrivate ? "private" : "public"}`,
+      isPrivate: user.isPrivate,
+    });
+  } catch (error) {
+    console.error("UPDATE PRIVACY ERROR:", error);
+    res.status(500).json({ success: false, message: "Failed to update privacy" });
+  }
+};
+
+export const updateTagsAndMentions = async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const { tagInStoryPermission, mentionPermission } = req.body;
+    const allowedValues = ["anyone", "friends"];
+    const updates = {};
+
+    if (tagInStoryPermission !== undefined) {
+      if (!allowedValues.includes(tagInStoryPermission)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid tagInStoryPermission value"
+        });
+      }
+      updates.tagInStoryPermission = tagInStoryPermission;
+    }
+
+    if (mentionPermission !== undefined) {
+      if (!allowedValues.includes(mentionPermission)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid mentionPermission value"
+        });
+      }
+      updates.mentionPermission = mentionPermission;
+    }
+
+    const user = await User.findByIdAndUpdate(userId, updates, { new: true });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      tagInStoryPermission: user.tagInStoryPermission,
+      mentionPermission: user.mentionPermission
+    });
+  } catch (error) {
+    console.error("UPDATE TAGS AND MENTIONS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update tags and mentions settings"
     });
   }
 };

@@ -14,7 +14,7 @@ export const useUploadStore = create((set, get) => ({
     reset: () => set({ isUploading: false, progress: 0, error: null, mediaUrl: "", thumbnail: null }),
 
     // Start background upload
-    startUpload: async ({ caption, mediaFile, visibility, aspectRatio, emoji }) => {
+    startUpload: async ({ caption, mediaFile, visibility, aspectRatio, emoji, isArchived }) => {
         set({ isUploading: true, progress: 0, error: null, thumbnail: mediaFile });
 
         try {
@@ -78,6 +78,7 @@ export const useUploadStore = create((set, get) => ({
                     media: uploadedMediaUrl || "",
                     aspectRatio,
                     visibility,
+                    isArchived
                 })
             });
 

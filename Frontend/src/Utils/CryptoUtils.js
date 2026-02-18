@@ -17,9 +17,20 @@ const AES_ALGO = {
 };
 
 /**
+ * Checks if the Web Crypto API (Subtle) is supported in the current context.
+ * It is typically disabled in insecure contexts (non-HTTPS or non-localhost).
+ */
+export const isCryptoSupported = () => {
+    return !!(window.crypto && window.crypto.subtle);
+};
+
+/**
  * Generates an RSA key pair for the user
  */
 export const generateRSAKeyPair = async () => {
+    if (!isCryptoSupported()) {
+        throw new Error("Web Crypto API (Subtle) is not supported in this context. Please use a secure connection (HTTPS or localhost).");
+    }
     return await window.crypto.subtle.generateKey(
         RSA_ALGO,
         true, // extractable
@@ -31,6 +42,7 @@ export const generateRSAKeyPair = async () => {
  * Exports a public key to SPKI format (base64)
  */
 export const exportPublicKey = async (publicKey) => {
+    if (!isCryptoSupported()) throw new Error("Crypto not supported");
     const exported = await window.crypto.subtle.exportKey("spki", publicKey);
     return btoa(String.fromCharCode(...new Uint8Array(exported)));
 };
@@ -44,6 +56,7 @@ export const importPublicKey = async (publicKeyB64) => {
     for (let i = 0; i < binaryDerString.length; i++) {
         binaryDer[i] = binaryDerString.charCodeAt(i);
     }
+    if (!isCryptoSupported()) throw new Error("Crypto not supported");
     return await window.crypto.subtle.importKey(
         "spki",
         binaryDer.buffer,
@@ -57,6 +70,7 @@ export const importPublicKey = async (publicKeyB64) => {
  * Exports a private key to PKCS8 format (base64)
  */
 export const exportPrivateKey = async (privateKey) => {
+    if (!isCryptoSupported()) throw new Error("Crypto not supported");
     const exported = await window.crypto.subtle.exportKey("pkcs8", privateKey);
     return btoa(String.fromCharCode(...new Uint8Array(exported)));
 };
@@ -70,6 +84,7 @@ export const importPrivateKey = async (privateKeyB64) => {
     for (let i = 0; i < binaryDerString.length; i++) {
         binaryDer[i] = binaryDerString.charCodeAt(i);
     }
+    if (!isCryptoSupported()) throw new Error("Crypto not supported");
     return await window.crypto.subtle.importKey(
         "pkcs8",
         binaryDer.buffer,
@@ -85,6 +100,10 @@ export const importPrivateKey = async (privateKeyB64) => {
  * @param {CryptoKey} recipientPublicKey - Recipient's RSA Public Key
  */
 export const encryptMessage = async (plainText, recipientPublicKey) => {
+    if (!isCryptoSupported()) {
+        console.warn("Encryption skipped: Crypto not supported in this context.");
+        return { cipherText: plainText, iv: "", encryptedKey: "", isUnencrypted: true };
+    }
     // 1. Generate a one-time AES key
     const aesKey = await window.crypto.subtle.generateKey(
         AES_ALGO,
@@ -117,9 +136,57 @@ export const encryptMessage = async (plainText, recipientPublicKey) => {
 };
 
 /**
+ * Encrypt one message for multiple recipients (group E2EE).
+ * Uses one AES payload key and encrypts that key with each recipient's RSA public key.
+ */
+export const encryptMessageForRecipients = async (plainText, recipients) => {
+    if (!isCryptoSupported()) {
+        console.warn("Encryption skipped: Crypto not supported in this context.");
+        return { cipherText: plainText, iv: "", encryptedKeys: {}, isUnencrypted: true };
+    }
+
+    const aesKey = await window.crypto.subtle.generateKey(
+        AES_ALGO,
+        true,
+        ["encrypt", "decrypt"]
+    );
+
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const encodedText = new TextEncoder().encode(plainText);
+    const encryptedData = await window.crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        aesKey,
+        encodedText
+    );
+
+    const rawAesKey = await window.crypto.subtle.exportKey("raw", aesKey);
+    const encryptedKeys = {};
+
+    for (const recipient of recipients) {
+        if (!recipient?.userId || !recipient?.publicKeyB64) continue;
+        const publicKey = await importPublicKey(recipient.publicKeyB64);
+        const encryptedAesKey = await window.crypto.subtle.encrypt(
+            RSA_ALGO,
+            publicKey,
+            rawAesKey
+        );
+        encryptedKeys[recipient.userId] = btoa(String.fromCharCode(...new Uint8Array(encryptedAesKey)));
+    }
+
+    return {
+        cipherText: btoa(String.fromCharCode(...new Uint8Array(encryptedData))),
+        iv: btoa(String.fromCharCode(...iv)),
+        encryptedKeys,
+    };
+};
+
+/**
  * Decrypts a message using the user's RSA Private Key
  */
 export const decryptMessage = async (cipherText, encryptedKey, iv, privateKey) => {
+    if (!isCryptoSupported() || !encryptedKey || !iv) {
+        return cipherText; // Fallback or unencrypted message
+    }
     try {
         // 1. Decrypt the AES key using user's RSA Private Key
         const encryptedAesKeyBinary = new Uint8Array(atob(encryptedKey).split("").map(c => c.charCodeAt(0)));
@@ -150,7 +217,9 @@ export const decryptMessage = async (cipherText, encryptedKey, iv, privateKey) =
 
         return new TextDecoder().decode(decryptedContent);
     } catch (error) {
-        console.error("Decryption failed:", error);
+        // Some old/plain messages may contain stale encryption fields.
+        // Avoid noisy runtime errors and return a safe fallback.
+        console.warn("Decryption skipped due to invalid encryption payload.");
         return "[Unable to decrypt message]";
     }
 };

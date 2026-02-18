@@ -58,13 +58,13 @@ const MediaUploader = ({ media, setMedia, setAspectRatio }) => {
         {media ? (
           isVideo ? (
             <video
-              src={URL.createObjectURL(media)}
+              src={typeof media === 'string' ? media : (media instanceof Blob ? URL.createObjectURL(media) : "")}
               controls
               className="w-full h-full object-cover"
             />
           ) : (
             <img
-              src={URL.createObjectURL(media)}
+              src={typeof media === 'string' ? media : (media instanceof Blob ? URL.createObjectURL(media) : "")}
               alt="preview"
               className="w-full h-full object-cover"
             />

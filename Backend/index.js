@@ -25,6 +25,7 @@ import friendroute from "./Routes/Friend.routes.js";
 import chatroute from "./Routes/Chat.routes.js";
 import eventroute from "./Routes/Event.routes.js";
 import newsroute from "./Routes/News.routes.js";
+import usageroute from "./Routes/Usage.routes.js";
 
 const app = express();
 const server = createServer(app);
@@ -32,7 +33,7 @@ app.use(cookieParser());
 
 // ✅ Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL,
+  origin: [process.env.CLIENT_URL, "https://localhost:5173", "http://localhost:5173"],
   credentials: true,
 }));
 app.use(express.json({ limit: "50mb" }));
@@ -55,6 +56,7 @@ app.use("/api/friends", friendroute)
 app.use("/api/chat", chatroute)
 app.use("/api/events", eventroute)
 app.use("/api/news", newsroute)
+app.use("/api/usage", usageroute)
 
 authroute.stack.forEach((r) => {
   if (r.route) {

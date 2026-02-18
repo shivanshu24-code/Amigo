@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useProfileStore } from '../Store/ProfileStore.js';
 import { usePostStore } from '../Store/PostStore.js';
 import { useFriendStore } from '../Store/FriendStore.js';
-import { BadgeCheck, Grid3X3, Bookmark, Heart, ArrowLeft, MessageCircle } from "lucide-react";
+import { BadgeCheck, Grid3X3, Bookmark, Heart, ArrowLeft, MessageCircle, Lock } from "lucide-react";
 
 import ProfileSkeleton from '../Components/ProfileSkeleton.jsx';
 import Avatar from '../Components/Avatar.jsx';
@@ -14,18 +14,20 @@ const OtherUserProfile = () => {
     const [activeTab, setActiveTab] = useState("posts");
 
     // Stores
-    const { profile, isOwner, loading, error, fetchProfileById } = useProfileStore();
-    const { userPosts, fetchUserPosts } = usePostStore();
+    const { profile, isOwner, loading, error: profileError, fetchProfileById } = useProfileStore();
+    const { userPosts, fetchUserPosts, error: postError } = usePostStore();
     const {
         friends,
-        sentRequests,
-        receivedRequests,
         fetchFriends,
+        fetchBlockedUsers,
         getFriendStatus,
         sendFriendRequest,
         acceptFriendRequest,
         rejectFriendRequest,
-        removeFriend
+        removeFriend,
+        blockUser,
+        unblockUser,
+        isUserBlocked
     } = useFriendStore();
 
     useEffect(() => {
@@ -46,11 +48,14 @@ const OtherUserProfile = () => {
             fetchProfileById(userId);
             fetchUserPosts(userId);
             fetchFriends();
+            fetchBlockedUsers();
         }
-    }, [userId, navigate, fetchProfileById, fetchUserPosts, fetchFriends]);
+    }, [userId, navigate, fetchProfileById, fetchUserPosts, fetchFriends, fetchBlockedUsers]);
 
     const relationshipStatus = getFriendStatus(userId);
     const [actionLoading, setActionLoading] = useState(false);
+    const [blockLoading, setBlockLoading] = useState(false);
+    const blocked = isUserBlocked(userId);
 
     const handleConnect = async () => {
         setActionLoading(true);
@@ -66,7 +71,31 @@ const OtherUserProfile = () => {
         }
     };
 
+    const handleBlockToggle = async () => {
+        if (!blocked && !window.confirm("Block this user? They will be removed from friends and requests.")) {
+            return;
+        }
+        setBlockLoading(true);
+        if (blocked) {
+            await unblockUser(userId);
+        } else {
+            await blockUser(userId);
+        }
+        setBlockLoading(false);
+    };
+
     const renderActionButtons = () => {
+        if (blocked) {
+            return (
+                <button
+                    disabled
+                    className="px-6 py-2.5 text-sm font-medium text-gray-500 bg-gray-100 rounded-full cursor-not-allowed"
+                >
+                    Blocked
+                </button>
+            );
+        }
+
         if (relationshipStatus === "friends") {
             return (
                 <div className="flex gap-2 flex-1">
@@ -136,16 +165,15 @@ const OtherUserProfile = () => {
         return <ProfileSkeleton />;
     }
 
-    if (error || !profile) {
+    // Handle Profile Load Error
+    if (profileError && !profile) {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-white p-6 text-center">
                 <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-4">
                     <ArrowLeft className="w-8 h-8" />
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 mb-2">Profile Not Found</h2>
-                <p className="text-gray-500 mb-6 max-w-xs">
-                    {error || "We couldn't find the profile you're looking for. It might have been moved or deleted."}
-                </p>
+                <p className="text-gray-500 mb-6 max-w-xs">{profileError}</p>
                 <button
                     onClick={() => navigate(-1)}
                     className="px-6 py-2.5 bg-gray-900 text-white rounded-full font-medium hover:bg-gray-800 transition shadow-md"
@@ -155,6 +183,10 @@ const OtherUserProfile = () => {
             </div>
         );
     }
+
+    if (!profile) return null;
+
+    const isPrivateAccount = postError && postError.includes("private");
 
     return (
         <div className="w-full h-full overflow-auto bg-white pb-24 md:pb-0">
@@ -255,9 +287,17 @@ const OtherUserProfile = () => {
                     </div>
 
                     <div className="mt-4 flex  gap-3">
-
-
                         {renderActionButtons()}
+                        <button
+                            onClick={handleBlockToggle}
+                            disabled={blockLoading}
+                            className={`px-4 py-2.5 text-sm font-medium rounded-full transition shadow-sm ${blocked
+                                ? "text-green-700 bg-green-50 hover:bg-green-100"
+                                : "text-red-600 bg-red-50 hover:bg-red-100"
+                                }`}
+                        >
+                            {blockLoading ? "..." : blocked ? "Unblock" : "Block"}
+                        </button>
                     </div>
                 </div>
 
@@ -324,6 +364,16 @@ const OtherUserProfile = () => {
 
                         <div className="mt-5 flex gap-3">
                             {renderActionButtons()}
+                            <button
+                                onClick={handleBlockToggle}
+                                disabled={blockLoading}
+                                className={`px-4 py-2.5 text-sm font-medium rounded-full transition shadow-sm ${blocked
+                                    ? "text-green-700 bg-green-50 hover:bg-green-100"
+                                    : "text-red-600 bg-red-50 hover:bg-red-100"
+                                    }`}
+                            >
+                                {blockLoading ? "..." : blocked ? "Unblock" : "Block"}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -355,7 +405,17 @@ const OtherUserProfile = () => {
             <div className="p-3 sm:p-4 md:p-6">
                 {activeTab === "posts" && (
                     <>
-                        {userPosts.length > 0 ? (
+                        {isPrivateAccount ? (
+                            <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+                                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-6">
+                                    <Lock size={40} className="text-gray-400" />
+                                </div>
+                                <h3 className="text-xl font-bold text-gray-900 mb-2">This Account is Private</h3>
+                                <p className="text-sm text-gray-500 max-w-xs mx-auto">
+                                    Follow this account to see their posts and stories.
+                                </p>
+                            </div>
+                        ) : userPosts.length > 0 ? (
                             <div className="grid grid-cols-3 gap-1 sm:gap-4 md:gap-6">
                                 {userPosts.map((post) => (
                                     <div

@@ -38,11 +38,42 @@ export const createStory = async (req, res) => {
       }
     }
 
+    if (mentions.length > 0) {
+      const currentUserId = req.user._id.toString();
+      const mentionedUserIds = [...new Set(mentions.map(m => String(m.user)).filter(Boolean))];
+      const mentionedUsers = await User.find({ _id: { $in: mentionedUserIds } }).select(
+        "_id username friends tagInStoryPermission mentionPermission"
+      );
+
+      const blockedUsers = [];
+      for (const targetUser of mentionedUsers) {
+        const isFriend = (targetUser.friends || []).some(
+          friendId => friendId.toString() === currentUserId
+        );
+        const canTagInStory =
+          targetUser.tagInStoryPermission === "anyone" || isFriend;
+        const canMention =
+          targetUser.mentionPermission === "anyone" || isFriend;
+
+        if (!canTagInStory || !canMention) {
+          blockedUsers.push(targetUser.username);
+        }
+      }
+
+      if (blockedUsers.length > 0) {
+        return res.status(403).json({
+          message: `You cannot tag or mention: ${blockedUsers.join(", ")}`
+        });
+      }
+    }
+
     const story = await Story.create({
       author: req.user._id,
       media: result.secure_url,
       caption: req.body.caption || "",
       mentions: mentions,
+      isArchived: req.body.isArchived === 'true' || req.body.isArchived === true,
+      visibility: req.body.visibility || "Everyone",
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
     });
 
@@ -68,6 +99,7 @@ export const getStories = async (req, res) => {
     const currentUserObjectId = new mongoose.Types.ObjectId(currentUserId);
 
     const stories = await Story.aggregate([
+      { $match: { isArchived: { $ne: true } } },
       { $sort: { createdAt: -1 } },
       {
         $lookup: {
@@ -78,6 +110,26 @@ export const getStories = async (req, res) => {
         }
       },
       { $unwind: "$authorData" },
+      {
+        $match: {
+          $and: [
+            {
+              $or: [
+                { visibility: { $ne: "CloseFriends" } },
+                { author: currentUserObjectId },
+                { "authorData.closeFriends": currentUserObjectId }
+              ]
+            },
+            {
+              $or: [
+                { "authorData.isPrivate": { $ne: true } },
+                { author: currentUserObjectId },
+                { "authorData.friends": currentUserObjectId }
+              ]
+            }
+          ]
+        }
+      },
       {
         $lookup: {
           from: "profiles",
@@ -151,7 +203,8 @@ export const getStories = async (req, res) => {
             avatar: { $ifNull: ["$authorProfile.avatar", "$authorData.avatar"] },
             firstname: "$authorProfile.firstname",
             lastname: "$authorProfile.lastname"
-          }
+          },
+          visibility: 1
         }
       },
       // Further sanitize mentions user data to avoid sending sensitive info
@@ -285,6 +338,127 @@ export const deleteStory = async (req, res) => {
     console.error("Error deleting story:", error);
     return res.status(500).json({
       message: "Internal server error"
+    });
+  }
+};
+
+/**
+ * Get archived stories
+ * @route GET /api/story/archived
+ */
+export const getArchivedStories = async (req, res) => {
+  try {
+    const stories = await Story.find({ author: req.user._id, isArchived: true })
+      .populate("author", "username avatar")
+      .sort({ createdAt: -1 });
+
+    res.json(stories);
+  } catch (error) {
+    console.error("GET ARCHIVED STORIES ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch archived stories" });
+  }
+};
+/**
+ * Unarchive a story
+ * @route PUT /api/story/unarchive/:storyId
+ */
+export const unarchiveStory = async (req, res) => {
+  try {
+    const story = await Story.findOneAndUpdate(
+      { _id: req.params.storyId, author: req.user._id },
+      {
+        isArchived: false,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // Reset expiration when unarchiving
+      },
+      { new: true }
+    );
+
+    if (!story) {
+      return res.status(404).json({ message: "Story not found or not authorized" });
+    }
+
+    res.json({ success: true, message: "Story unarchived successfully", story });
+  } catch (error) {
+    console.error("UNARCHIVE STORY ERROR:", error);
+    res.status(500).json({ message: "Failed to unarchive story" });
+  }
+};
+
+/**
+ * Get users and friends hidden from story
+ * @route GET /api/story/settings/hidden
+ */
+export const getHiddenStoryUsers = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const user = await User.findById(userId)
+      .populate("hiddenStoryFrom", "username avatar firstname lastname")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      success: true,
+      data: user.hiddenStoryFrom || []
+    });
+  } catch (error) {
+    console.error("GET HIDDEN STORY USERS ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch hidden story users" });
+  }
+};
+
+/**
+ * Toggle hiding story from a user
+ * @route POST /api/story/settings/hide/:userId
+ */
+export const toggleHideStoryFromUser = async (req, res) => {
+  try {
+    const currentUserId = req.user._id;
+    const targetUserId = req.params.userId;
+
+    // Can't hide from yourself
+    if (currentUserId.toString() === targetUserId) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot hide story from yourself"
+      });
+    }
+
+    const user = await User.findById(currentUserId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    const isHidden = user.hiddenStoryFrom.includes(targetUserId);
+
+    let update;
+    if (isHidden) {
+      // Remove from hidden list
+      update = { $pull: { hiddenStoryFrom: targetUserId } };
+    } else {
+      // Add to hidden list
+      update = { $addToSet: { hiddenStoryFrom: targetUserId } };
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(currentUserId, update, { new: true }).populate("hiddenStoryFrom", "username avatar firstname lastname");
+
+    res.status(200).json({
+      success: true,
+      isHidden: !isHidden,
+      message: isHidden ? "Story unhidden from user" : "Story hidden from user",
+      data: updatedUser.hiddenStoryFrom
+    });
+  } catch (error) {
+    console.error("Toggle hide story error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while toggling story visibility"
     });
   }
 };
