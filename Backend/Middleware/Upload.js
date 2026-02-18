@@ -24,9 +24,13 @@ const fileFilter = (req, file, cb) => {
     "image/jpeg",
     "image/png",
     "image/jpg",
+    "image/webp",
     "video/mp4",
+    "video/webm",
+    "video/ogg",
     "video/mpeg",
-    "video/quicktime"
+    "video/quicktime",
+    "video/x-matroska"
   ];
 
   if (allowedTypes.includes(file.mimetype)) {

@@ -30,11 +30,15 @@ export const useUploadStore = create((set, get) => ({
                 const formData = new FormData();
                 formData.append("file", mediaFile);
                 formData.append("upload_preset", "amigo_unsigned");
+                const isVideoUpload = mediaFile.type?.startsWith("video/");
+                const cloudinaryEndpoint = isVideoUpload
+                    ? "https://api.cloudinary.com/v1_1/dojxawpjt/video/upload"
+                    : "https://api.cloudinary.com/v1_1/dojxawpjt/image/upload";
 
                 // Use XMLHttpRequest for progress tracking
                 uploadedMediaUrl = await new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
-                    xhr.open("POST", "https://api.cloudinary.com/v1_1/dojxawpjt/image/upload");
+                    xhr.open("POST", cloudinaryEndpoint);
 
                     xhr.upload.onprogress = (event) => {
                         if (event.lengthComputable) {

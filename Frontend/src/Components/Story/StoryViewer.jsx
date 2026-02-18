@@ -21,6 +21,10 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
   const menuRef = useRef(null);
 
   const story = stories[currentIndex];
+  const storyMedia = Array.isArray(story?.media) ? story.media[0] : story?.media;
+  const isVideoStory =
+    typeof storyMedia === "string" &&
+    (storyMedia.includes("/video/upload/") || /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(storyMedia));
   const { user } = useAuthStore();
   const { recordView, fetchViewers, deleteStory, currentViewers, viewersLoading, closeViewersModal } = useStoryStore();
 
@@ -261,18 +265,29 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
 
         {/* 🖼 Story Media */}
         <div className="absolute inset-0 w-full h-full overflow-hidden">
-          {/* Blurred Background */}
-          <img
-            src={story.media}
-            alt="story blur"
-            className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-70 scale-110"
-          />
-          {/* Main Content */}
-          <img
-            src={story.media}
-            alt="story"
-            className="relative w-full h-full object-contain z-10"
-          />
+          {isVideoStory ? (
+            <video
+              src={storyMedia}
+              className="relative w-full h-full object-contain z-10 bg-black"
+              autoPlay
+              muted
+              loop
+              playsInline
+            />
+          ) : (
+            <>
+              <img
+                src={storyMedia}
+                alt="story blur"
+                className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-70 scale-110"
+              />
+              <img
+                src={storyMedia}
+                alt="story"
+                className="relative w-full h-full object-contain z-10"
+              />
+            </>
+          )}
         </div>
 
         {/* 📍 Mentions overlay */}

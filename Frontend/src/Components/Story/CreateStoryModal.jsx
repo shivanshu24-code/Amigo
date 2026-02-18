@@ -25,6 +25,12 @@ const CreateStoryModal = ({ onClose }) => {
     const [searchTerm, setSearchTerm] = useState("");
     const [draggingMention, setDraggingMention] = useState(null);
 
+    const previewUrl = Array.isArray(preview) ? preview[0] : preview;
+    const isPreviewVideo =
+        !!selectedFile?.type?.startsWith("video/") ||
+        (typeof previewUrl === "string" &&
+            (previewUrl.includes("/video/upload/") || /\.(mp4|mov|webm|m4v|ogg)(\?|$)/i.test(previewUrl)));
+
     useEffect(() => {
         fetchFriends();
     }, []);
@@ -159,24 +165,36 @@ const CreateStoryModal = ({ onClose }) => {
                     onTouchEnd={handleDragEnd}
                     className="relative bg-black aspect-[9/16] max-h-[450px] w-full overflow-hidden touch-none flex items-center justify-center group"
                 >
-                    {preview ? (
+                    {previewUrl ? (
                         <>
-                            {/* Blurred Background */}
-                            <img
-                                src={preview}
-                                alt="Story preview blur"
-                                className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-60 scale-110"
-                            />
-                            {/* Main Content */}
-                            <img
-                                src={preview}
-                                alt="Story preview"
-                                className="relative w-full h-full object-contain z-10 shadow-2xl"
-                            />
+                            {!isPreviewVideo && (
+                                <img
+                                    src={previewUrl}
+                                    alt="Story preview blur"
+                                    className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-60 scale-110"
+                                />
+                            )}
+                            {isPreviewVideo ? (
+                                <video
+                                    src={previewUrl}
+                                    className="relative w-full h-full object-contain z-10 shadow-2xl"
+                                    controls
+                                    muted
+                                    autoPlay
+                                    loop
+                                    playsInline
+                                />
+                            ) : (
+                                <img
+                                    src={previewUrl}
+                                    alt="Story preview"
+                                    className="relative w-full h-full object-contain z-10 shadow-2xl"
+                                />
+                            )}
 
                             {!initialStoryData && (
                                 <label className="absolute inset-0 z-20 cursor-pointer flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
-                                    <span className="bg-white/90 backdrop-blur text-gray-900 px-4 py-2 rounded-full text-sm font-semibold shadow-lg">Change Photo</span>
+                                    <span className="bg-white/90 backdrop-blur text-gray-900 px-4 py-2 rounded-full text-sm font-semibold shadow-lg">Change Media</span>
                                     <input type="file" accept="image/*,video/*" hidden onChange={handleFileSelect} />
                                 </label>
                             )}
