@@ -36,7 +36,16 @@ export const useProfileStore = create((set, get) => ({
             const res = await fetch(`${API_BASE}/profile/${userId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            if (!res.ok) throw new Error("Failed to fetch profile");
+            if (!res.ok) {
+                let message = "Failed to fetch profile";
+                try {
+                    const errData = await res.json();
+                    message = errData?.message || message;
+                } catch {
+                    // keep fallback message
+                }
+                throw new Error(message);
+            }
             const data = await res.json();
 
             // Check if viewing own profile

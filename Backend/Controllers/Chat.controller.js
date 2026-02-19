@@ -319,10 +319,11 @@ export const getConversations = async (req, res) => {
                 populate: [
                     { path: "sharedPost", select: "_id caption media author" },
                     { path: "sharedStory", select: "_id media author" },
+                    { path: "sharedProfile", select: "_id username avatar isPrivate" },
                     { path: "sender", select: "username" }
                 ]
             })
-            .populate("participants", "username avatar publicKey")
+            .populate("participants", "username avatar publicKey readReceiptsEnabled")
             .populate("groupAdmin", "username avatar")
             .sort({ updatedAt: -1 });
 
@@ -340,7 +341,6 @@ export const getConversations = async (req, res) => {
         profiles.forEach(p => profileMap.set(p.user.toString(), p));
 
         // Get unread count for each conversation
-        const Message = (await import("../Models/Message.model.js")).default;
         const unreadCounts = await Promise.all(
             conversations.map(async (conv) => {
                 const unreadCount = await Message.countDocuments({
@@ -361,7 +361,6 @@ export const getConversations = async (req, res) => {
         // Format conversations
         const formattedConversations = conversations.map(conv => {
             const unreadCount = unreadMap.get(conv._id.toString()) || 0;
-            
             if (conv.isGroup) {
                 return {
                     _id: conv._id,
@@ -393,6 +392,7 @@ export const getConversations = async (req, res) => {
                         username: otherUser.username,
                         avatar: profile?.avatar || otherUser.avatar,
                         publicKey: otherUser.publicKey,
+                        readReceiptsEnabled: otherUser.readReceiptsEnabled !== false,
                         firstname: profile?.firstname,
                         lastname: profile?.lastname
                     },
@@ -526,6 +526,7 @@ const getMessagesWithConv = async (conversationId, userId, page, limit, res) => 
             deletedBy: { $ne: userId },
         })
             .populate("sender", "username avatar")
+            .populate("sharedProfile", "username avatar isPrivate")
             .populate({
                 path: "sharedPost",
                 populate: { path: "author", select: "username avatar" }
@@ -539,7 +540,7 @@ const getMessagesWithConv = async (conversationId, userId, page, limit, res) => 
             .limit(parseInt(limit));
 
         // Mark unread messages as read (for 1-on-1 mostly, or current user in group)
-        await Message.updateMany(
+        const readUpdateResult = await Message.updateMany(
             {
                 conversationId: conversationId,
                 receiver: userId,
@@ -548,6 +549,25 @@ const getMessagesWithConv = async (conversationId, userId, page, limit, res) => 
             },
             { read: true }
         );
+
+        // Inform other participant for 1-on-1 chats so sender can update blue ticks in real-time.
+        const currentUser = await User.findById(userId).select("readReceiptsEnabled");
+        const canShareReadReceipts = currentUser?.readReceiptsEnabled !== false;
+        if (canShareReadReceipts && readUpdateResult.modifiedCount > 0) {
+            const conversation = await Conversation.findById(conversationId).select("participants");
+            if (conversation?.participants?.length === 2) {
+                const otherParticipant = conversation.participants.find(
+                    (participantId) => participantId.toString() !== userId.toString()
+                );
+
+                if (otherParticipant) {
+                    emitToUser(otherParticipant, "messages-read", {
+                        conversationId: conversationId,
+                        readBy: userId,
+                    });
+                }
+            }
+        }
 
         res.status(200).json({
             success: true,
@@ -578,8 +598,13 @@ export const deleteMessage = async (req, res) => {
             });
         }
 
-        // Verify user is part of the message
-        if (message.sender.toString() !== userId.toString() && message.receiver.toString() !== userId.toString()) {
+        // Verify user is part of the conversation that contains this message.
+        const conversation = await Conversation.findOne({
+            _id: message.conversationId,
+            participants: userId,
+        });
+
+        if (!conversation) {
             return res.status(403).json({
                 success: false,
                 message: "You are not authorized to delete this message",
@@ -598,10 +623,9 @@ export const deleteMessage = async (req, res) => {
             message.isDeletedForEveryone = true;
             await message.save();
 
-            // Notify both participants via socket
-            const participants = [message.sender, message.receiver];
-            participants.forEach(pId => {
-                emitToUser(pId, "message-deleted-everyone", {
+            // Notify all conversation participants via socket
+            conversation.participants.forEach((participantId) => {
+                emitToUser(participantId, "message-deleted-everyone", {
                     messageId: message._id,
                     conversationId: message.conversationId,
                 });
@@ -613,7 +637,11 @@ export const deleteMessage = async (req, res) => {
             });
         } else {
             // Delete for me only
-            if (!message.deletedBy.includes(userId)) {
+            const alreadyDeletedForUser = message.deletedBy.some(
+                (deletedUserId) => deletedUserId.toString() === userId.toString()
+            );
+
+            if (!alreadyDeletedForUser) {
                 message.deletedBy.push(userId);
                 await message.save();
             }
@@ -665,15 +693,21 @@ export const markAsRead = async (req, res) => {
             { read: true }
         );
 
-        // Notify sender that messages were read
-        const otherParticipant = conversation.participants.find(
-            p => p.toString() !== userId.toString()
-        );
+        // Notify sender that messages were read (1-on-1 conversations only).
+        const currentUser = await User.findById(userId).select("readReceiptsEnabled");
+        const canShareReadReceipts = currentUser?.readReceiptsEnabled !== false;
+        if (canShareReadReceipts && result.modifiedCount > 0 && conversation.participants?.length === 2) {
+            const otherParticipant = conversation.participants.find(
+                p => p.toString() !== userId.toString()
+            );
 
-        emitToUser(otherParticipant, "messages-read", {
-            conversationId: conversationId,
-            readBy: userId,
-        });
+            if (otherParticipant) {
+                emitToUser(otherParticipant, "messages-read", {
+                    conversationId: conversationId,
+                    readBy: userId,
+                });
+            }
+        }
 
         res.status(200).json({
             success: true,
@@ -890,6 +924,84 @@ export const shareStoryToFriend = async (req, res) => {
         res.status(500).json({
             success: false,
             message: "Server error while sharing story",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * Share a profile to a friend via message
+ * @route POST /api/chat/share-profile/:profileId/:userId
+ */
+export const shareProfileToFriend = async (req, res) => {
+    try {
+        const senderId = req.user._id;
+        const { profileId, userId: receiverId } = req.params;
+        const { text } = req.body || {};
+
+        const profileUser = await User.findById(profileId).select("username avatar isPrivate");
+        if (!profileUser) {
+            return res.status(404).json({
+                success: false,
+                message: "Profile user not found",
+            });
+        }
+
+        const receiver = await User.findById(receiverId);
+        if (!receiver) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        const friendshipValid = await areFriends(senderId, receiverId);
+        if (!friendshipValid) {
+            return res.status(403).json({
+                success: false,
+                message: "You can only share profiles with friends",
+            });
+        }
+
+        const conversation = await getOrCreateConversation(senderId, receiverId);
+
+        const message = await Message.create({
+            sender: senderId,
+            receiver: receiverId,
+            conversationId: conversation._id,
+            text: text?.trim() || undefined,
+            sharedProfile: profileId,
+        });
+
+        conversation.lastMessage = message._id;
+        await conversation.save();
+
+        await message.populate("sender", "username avatar");
+        await message.populate("sharedProfile", "username avatar isPrivate");
+
+        emitToUser(receiverId, "new-message", {
+            message: {
+                _id: message._id,
+                text: message.text,
+                sender: message.sender,
+                receiver: receiverId,
+                conversationId: conversation._id,
+                sharedProfile: message.sharedProfile,
+                createdAt: message.createdAt,
+            },
+            conversationId: conversation._id,
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Profile shared successfully",
+            data: message,
+        });
+    } catch (error) {
+        console.error("Share Profile Error:", error.message);
+        res.status(500).json({
+            success: false,
+            message: "Server error while sharing profile",
             error: error.message,
         });
     }

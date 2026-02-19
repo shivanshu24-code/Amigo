@@ -1,5 +1,5 @@
 import express from "express";
-import { signup, login, checkAuth, setPassword, logout, updatePrivacy, updateTagsAndMentions } from "../Controllers/Auth.controller.js";
+import { signup, login, checkAuth, setPassword, logout, updatePrivacy, updateTagsAndMentions, updateReadReceipts } from "../Controllers/Auth.controller.js";
 import { protect } from "../Middleware/token.js"
 import { verifyOtp } from "../Controllers/verifyOtp.controller.js";
 const router = express.Router();
@@ -22,5 +22,6 @@ router.post("/logout", logout)
 router.get("/check-auth", protect, checkAuth);
 router.put("/privacy", protect, updatePrivacy);
 router.put("/tags-mentions", protect, updateTagsAndMentions);
+router.put("/read-receipts", protect, updateReadReceipts);
 
 export default router;

@@ -27,6 +27,10 @@ const messageSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "Story",
     },
+    sharedProfile: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+    },
     read: {
         type: Boolean,
         default: false,
@@ -62,14 +66,14 @@ const messageSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-// Custom validation: either text or sharedPost or sharedStory must be present
+// Custom validation: message must contain at least one supported payload.
 messageSchema.path('text').validate(function (value) {
-    // If text is empty/undefined, one of sharedPost/sharedStory/attachment must exist
-    if (!value && !this.sharedPost && !this.sharedStory && !this.attachment?.url) {
+    // If text is empty/undefined, one of sharedPost/sharedStory/sharedProfile/attachment must exist
+    if (!value && !this.sharedPost && !this.sharedStory && !this.sharedProfile && !this.attachment?.url) {
         return false;
     }
     return true;
-}, 'Message must have either text, a shared post, a shared story, or an attachment');
+}, 'Message must have either text, a shared post, a shared story, a shared profile, or an attachment');
 
 // Index for efficient message queries
 messageSchema.index({ conversationId: 1, createdAt: -1 });

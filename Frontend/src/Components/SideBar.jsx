@@ -14,8 +14,10 @@ const SideBar = () => {
         group
         h-full
         bg-white
+        dark:bg-[#0b0b0b]
         border-r
         border-gray-200
+        dark:border-[#2a2a2a]
         flex
         flex-col
         transition-all
@@ -66,16 +68,16 @@ const SideBar = () => {
       </div>
 
       {/* PROFILE AT BOTTOM */}
-      <div className="mt-auto border-t border-gray-100 p-2">
-        <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+      <div className="mt-auto border-t border-gray-100 dark:border-[#2a2a2a] p-2">
+        <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/10 cursor-pointer">
           <img
             src={user?.avatar || "/profile.jpg"}
             alt="profile"
             className="w-9 h-9 rounded-full object-cover flex-shrink-0"
           />
           <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 overflow-hidden">
-            <p className="text-sm font-medium text-gray-800 truncate">{user?.username || "User"}</p>
-            <p className="text-xs text-gray-500 truncate">View profile</p>
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{user?.username || "User"}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">View profile</p>
           </div>
         </div>
       </div>

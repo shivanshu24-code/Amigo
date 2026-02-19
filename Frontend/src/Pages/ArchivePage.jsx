@@ -12,6 +12,8 @@ const ArchivePage = () => {
     const [posts, setPosts] = useState([]);
     const [stories, setStories] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [pendingDelete, setPendingDelete] = useState(null);
+    const [deletingItem, setDeletingItem] = useState(false);
 
     // Viewing state
     const [selectedPost, setSelectedPost] = useState(null);
@@ -58,7 +60,13 @@ const ArchivePage = () => {
     };
 
     const handleDelete = async (id, type) => {
-        if (!window.confirm("Are you sure you want to permanently delete this?")) return;
+        setPendingDelete({ id, type });
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!pendingDelete?.id || !pendingDelete?.type || deletingItem) return;
+        const { id, type } = pendingDelete;
+        setDeletingItem(true);
         try {
             if (type === "post") {
                 await api.delete(`/post/${id}`);
@@ -71,6 +79,9 @@ const ArchivePage = () => {
             }
         } catch (error) {
             console.error("Failed to delete:", error);
+        } finally {
+            setDeletingItem(false);
+            setPendingDelete(null);
         }
     };
 
@@ -304,6 +315,39 @@ const ArchivePage = () => {
                             <Share2 size={14} />
                             Edit & Share
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {pendingDelete && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/50"
+                        onClick={() => !deletingItem && setPendingDelete(null)}
+                    />
+                    <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-100 p-5">
+                        <h3 className="text-base font-semibold text-gray-900">
+                            Delete {pendingDelete.type}?
+                        </h3>
+                        <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                            Do you really want to permanently delete this {pendingDelete.type}?
+                        </p>
+                        <div className="mt-4 flex items-center justify-end gap-2">
+                            <button
+                                onClick={() => setPendingDelete(null)}
+                                disabled={deletingItem}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmDelete}
+                                disabled={deletingItem}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {deletingItem ? "Deleting..." : "Delete"}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

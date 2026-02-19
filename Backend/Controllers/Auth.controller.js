@@ -51,6 +51,7 @@ export const login = async (req, res) => {
         email: user.email,
         hasProfile: user.hasProfile,
         isPrivate: user.isPrivate,
+        readReceiptsEnabled: user.readReceiptsEnabled !== false,
         tagInStoryPermission: user.tagInStoryPermission || "anyone",
         mentionPermission: user.mentionPermission || "anyone",
         avatar: userAvatar,
@@ -211,7 +212,7 @@ export const setPassword = async (req, res) => {
 /* ===================== CHECK AUTH ===================== */
 export const checkAuth = async (req, res) => {
   const user = await User.findById(req.user._id).select(
-    "_id email username hasProfile savedPosts isPrivate tagInStoryPermission mentionPermission"
+    "_id email username hasProfile savedPosts isPrivate readReceiptsEnabled tagInStoryPermission mentionPermission"
   );
 
   let avatar = null;
@@ -312,6 +313,41 @@ export const updateTagsAndMentions = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to update tags and mentions settings"
+    });
+  }
+};
+
+export const updateReadReceipts = async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const { readReceiptsEnabled } = req.body;
+
+    if (typeof readReceiptsEnabled !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "readReceiptsEnabled must be a boolean",
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { readReceiptsEnabled },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      readReceiptsEnabled: user.readReceiptsEnabled,
+    });
+  } catch (error) {
+    console.error("UPDATE READ RECEIPTS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update read receipts setting",
     });
   }
 };

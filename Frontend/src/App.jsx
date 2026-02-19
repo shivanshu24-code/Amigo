@@ -7,6 +7,7 @@ import { useCallStore } from "./Store/CallStore.js";
 import { useChatStore } from "./Store/ChatStore.js";
 import { useFriendStore } from "./Store/FriendStore.js";
 import { useStoryStore } from "./Store/StoryStore.js";
+import { useNotificationStore } from "./Store/NotificationStore.js";
 
 import SignIn from "./Pages/SignIn.jsx";
 import Feed from "./Pages/Feed.jsx";
@@ -41,6 +42,7 @@ import BlockedPage from "./Pages/BlockedPage.jsx";
 import PrivacyCenterPage from "./Pages/PrivacyCenterPage.jsx";
 import HelpCenterPage from "./Pages/HelpCenterPage.jsx";
 import HelpTopicDetailPage from "./Pages/HelpTopicDetailPage.jsx";
+import ChatSettingsPage from "./Pages/ChatSettingsPage.jsx";
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, authChecked } = useAuthStore();
@@ -61,7 +63,7 @@ const ProtectedRoute = ({ children }) => {
 };
 
 // Pages that should show the app layout (sidebar + navbar)
-const APP_PAGES = ['/feed', '/users', '/chat', '/profile', '/settings', '/settings/time-management', '/settings/archive', '/settings/close-friends', '/settings/privacy', '/settings/story-settings', '/settings/tags-mentions', '/settings/blocked', '/settings/privacy-center', '/settings/help-center'];
+const APP_PAGES = ['/feed', '/users', '/chat', '/profile', '/settings', '/settings/time-management', '/settings/archive', '/settings/close-friends', '/settings/privacy', '/settings/story-settings', '/settings/tags-mentions', '/settings/blocked', '/settings/chat', '/settings/privacy-center', '/settings/help-center'];
 
 function App() {
   const checkAuth = useAuthStore((state) => state.checkAuth);
@@ -78,6 +80,7 @@ function App() {
       useFriendStore.getState().reset();
       useStoryStore.getState().reset();
       useCallStore.getState().reset();
+      useNotificationStore.getState().reset();
     }
   }, [isAuthenticated]);
 
@@ -139,7 +142,7 @@ function App() {
             </aside>
 
             {/* Main Content - takes remaining space */}
-            <main className="flex-1 overflow-hidden bg-gray-50">
+            <main className="flex-1 overflow-hidden bg-white dark:bg-black">
               <Routes>
                 <Route
                   path="/feed"
@@ -242,6 +245,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <BlockedPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/chat"
+                  element={
+                    <ProtectedRoute>
+                      <ChatSettingsPage />
                     </ProtectedRoute>
                   }
                 />

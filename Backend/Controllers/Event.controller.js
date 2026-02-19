@@ -1,5 +1,14 @@
 import { Event } from "../Models/Event.model.js";
 
+const getEventExpiryDate = (eventDate) => {
+    // Keep event for 24h after event day ends:
+    // expiry = start of next day + 24h
+    const d = new Date(eventDate);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 2);
+    return d;
+};
+
 /**
  * Create a new event
  * @route POST /api/events/create
@@ -15,6 +24,7 @@ export const createEvent = async (req, res) => {
         const newEvent = new Event({
             title,
             date,
+            expiresAt: getEventExpiryDate(date),
             time,
             location,
             type,
@@ -41,10 +51,24 @@ export const createEvent = async (req, res) => {
 export const getEvents = async (req, res) => {
     try {
         const now = new Date();
-        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+
+        // Backfill expiry for legacy events created before expiresAt existed
+        const legacyEvents = await Event.find({ expiresAt: { $exists: false } }).select("_id date");
+        if (legacyEvents.length > 0) {
+            const ops = legacyEvents.map((ev) => ({
+                updateOne: {
+                    filter: { _id: ev._id },
+                    update: { $set: { expiresAt: getEventExpiryDate(ev.date) } }
+                }
+            }));
+            await Event.bulkWrite(ops);
+        }
+
+        // Hard cleanup so expired events disappear immediately in API response
+        await Event.deleteMany({ expiresAt: { $lte: now } });
 
         const events = await Event.find({
-            date: { $gte: startOfDay }
+            expiresAt: { $gt: now }
         })
             .populate("createdBy", "username avatar")
             .sort({ date: 1 }); // Sort by nearest date
@@ -93,7 +117,7 @@ export const updateEvent = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user._id;
-        const updateData = req.body;
+        const updateData = { ...req.body };
 
         const event = await Event.findById(id);
 
@@ -104,6 +128,10 @@ export const updateEvent = async (req, res) => {
         // Check ownership
         if (event.createdBy.toString() !== userId.toString()) {
             return res.status(403).json({ success: false, message: "Not authorized to update this event" });
+        }
+
+        if (updateData.date) {
+            updateData.expiresAt = getEventExpiryDate(updateData.date);
         }
 
         const updatedEvent = await Event.findByIdAndUpdate(

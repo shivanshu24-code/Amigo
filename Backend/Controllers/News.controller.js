@@ -1,5 +1,11 @@
 import News from "../Models/News.model.js";
 
+const getNewsExpiryDate = (baseDate = new Date()) => {
+    const d = new Date(baseDate);
+    d.setHours(d.getHours() + 24);
+    return d;
+};
+
 /**
  * Create a new news item
  * @route POST /api/news/create
@@ -13,6 +19,7 @@ export const createNews = async (req, res) => {
             headline,
             content,
             isNew: isNew !== undefined ? isNew : true,
+            expiresAt: getNewsExpiryDate(),
             createdBy: userId
         });
 
@@ -32,8 +39,25 @@ export const createNews = async (req, res) => {
  */
 export const getAllNews = async (req, res) => {
     try {
+        const now = new Date();
+
+        // Backfill expiry for legacy news without expiresAt
+        const legacyNews = await News.find({ expiresAt: { $exists: false } }).select("_id createdAt");
+        if (legacyNews.length > 0) {
+            const ops = legacyNews.map((item) => ({
+                updateOne: {
+                    filter: { _id: item._id },
+                    update: { $set: { expiresAt: getNewsExpiryDate(item.createdAt) } }
+                }
+            }));
+            await News.bulkWrite(ops);
+        }
+
+        // Remove expired news immediately from API behavior
+        await News.deleteMany({ expiresAt: { $lte: now } });
+
         // Get news sorted by creation date (newest first)
-        const news = await News.find()
+        const news = await News.find({ expiresAt: { $gt: now } })
             .populate("createdBy", "username avatar")
             .sort({ createdAt: -1 });
 
@@ -81,7 +105,7 @@ export const updateNews = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user._id;
-        const updateData = req.body;
+        const updateData = { ...req.body, expiresAt: getNewsExpiryDate() };
 
         const news = await News.findById(id);
 

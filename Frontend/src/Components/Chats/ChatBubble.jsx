@@ -6,8 +6,10 @@ import { AlertCircle, Download, ExternalLink, Heart, MessageCircle, Pause, Play,
 import { useChatStore } from "../../Store/ChatStore";
 import { useStoryStore } from "../../Store/StoryStore";
 
-const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPost, messageId, isDeletedForEveryone, isStoryReply, sharedStory, isEncrypted, attachment }) => {
+const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPost, sharedProfile, messageId, isDeletedForEveryone, isStoryReply, sharedStory, isEncrypted, attachment }) => {
   const [showOptions, setShowOptions] = useState(false);
+  const [pendingDeleteType, setPendingDeleteType] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isInlineVideoPlaying, setIsInlineVideoPlaying] = useState(false);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -20,14 +22,18 @@ const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPos
   const { deleteMessage } = useChatStore();
   const { openViewer } = useStoryStore();
 
-  const handleDeleteForMe = () => {
-    deleteMessage(messageId, false);
-    setShowOptions(false);
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteType || isDeleting) return;
+    setIsDeleting(true);
+    const deleteForEveryone = pendingDeleteType === "everyone";
+    await deleteMessage(messageId, deleteForEveryone);
+    setIsDeleting(false);
+    setPendingDeleteType(null);
   };
 
-  const handleDeleteForEveryone = () => {
-    deleteMessage(messageId, true);
-    setShowOptions(false);
+  const handleCancelDelete = () => {
+    if (isDeleting) return;
+    setPendingDeleteType(null);
   };
 
   useEffect(() => {
@@ -165,9 +171,36 @@ const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPos
     </div>
   );
 
+  const SharedProfileCard = () => (
+    <Link
+      to={`/profile/${sharedProfile._id}`}
+      className="block w-64 bg-white rounded-xl overflow-hidden shadow-md border border-gray-100 hover:shadow-lg transition-shadow"
+    >
+      <div className="p-3 flex items-center gap-3">
+        <img
+          src={sharedProfile.avatar || `https://ui-avatars.com/api/?name=${sharedProfile.username}&background=random&size=48`}
+          alt={sharedProfile.username}
+          className="w-10 h-10 rounded-full object-cover ring-2 ring-gray-100"
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-gray-500">Shared profile</p>
+          <p className="text-sm font-semibold text-gray-900 truncate">{sharedProfile.username}</p>
+          {sharedProfile.isPrivate && (
+            <p className="text-[10px] text-gray-500">Private account</p>
+          )}
+        </div>
+        <ExternalLink size={14} className="text-gray-400" />
+      </div>
+      <div className="px-3 pb-3">
+        <p className="text-[10px] text-gray-400 uppercase tracking-wide">Tap to view profile</p>
+      </div>
+    </Link>
+  );
+
   const isUnavailableSharedStoryMessage =
     !message &&
     !sharedPost &&
+    !sharedProfile &&
     !sharedStory &&
     !attachment?.url &&
     !isStoryReply &&
@@ -572,6 +605,17 @@ const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPos
             </motion.div>
           )}
 
+          {/* Shared Profile Card */}
+          {sharedProfile && !isDeletedForEveryone && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.2 }}
+            >
+              <SharedProfileCard />
+            </motion.div>
+          )}
+
           {/* Text message bubble */}
           {message && !isDeletedForEveryone && (
             <motion.div
@@ -659,7 +703,10 @@ const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPos
                   className={`absolute bottom-full mb-2 ${isMe ? 'right-0' : 'left-0'} z-20 bg-white shadow-xl border border-gray-100 rounded-xl py-1 min-w-[140px] overflow-hidden`}
                 >
                   <button
-                    onClick={handleDeleteForMe}
+                    onClick={() => {
+                      setPendingDeleteType("me");
+                      setShowOptions(false);
+                    }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     <FaTrash size={10} className="text-gray-400" />
@@ -667,7 +714,10 @@ const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPos
                   </button>
                   {isMe && (
                     <button
-                      onClick={handleDeleteForEveryone}
+                      onClick={() => {
+                        setPendingDeleteType("everyone");
+                        setShowOptions(false);
+                      }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
                     >
                       <FaTrash size={10} />
@@ -680,6 +730,45 @@ const ChatBubble = ({ message, isMe, time, avatar, senderName, status, sharedPos
           </AnimatePresence>
         </div>
       </div>
+
+      <AnimatePresence>
+        {pendingDeleteType && (
+          <>
+            <div className="fixed inset-0 z-40 bg-black/35" onClick={handleCancelDelete}></div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-gray-100 p-5">
+                <h3 className="text-sm font-semibold text-gray-900">Delete message?</h3>
+                <p className="mt-2 text-xs text-gray-600 leading-relaxed">
+                  {pendingDeleteType === "everyone"
+                    ? "Do you really want to delete this message for everyone?"
+                    : "Do you really want to delete this message only for you?"}
+                </p>
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    onClick={handleCancelDelete}
+                    disabled={isDeleting}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmDelete}
+                    disabled={isDeleting}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50 ${pendingDeleteType === "everyone" ? "bg-red-600 hover:bg-red-700" : "bg-indigo-600 hover:bg-indigo-700"}`}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

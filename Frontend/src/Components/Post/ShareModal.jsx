@@ -3,13 +3,14 @@ import { X, Link2, Send, Check, Search, Loader2 } from "lucide-react";
 import { useFriendStore } from "../../Store/FriendStore.js";
 import api from "../../Services/Api.js";
 
-const ShareModal = ({ postId, storyId, onClose }) => {
+const ShareModal = ({ postId, storyId, profileId, onClose }) => {
   const { friends, fetchFriends } = useFriendStore();
   const [view, setView] = useState("main"); // "main" | "friends"
   const [searchQuery, setSearchQuery] = useState("");
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(null); // friendId being shared to
   const [sharedTo, setSharedTo] = useState([]); // Array of friendIds already shared
+  const isProfileShare = Boolean(profileId);
 
   useEffect(() => {
     if (friends.length === 0) {
@@ -19,9 +20,11 @@ const ShareModal = ({ postId, storyId, onClose }) => {
 
   // Generate shareable link
   // If storyId is present, we might just copy a link to the app home for now as deep linking to stories is tricky without a dedicated route
-  const shareableLink = storyId
-    ? `${window.location.origin}`
-    : `${window.location.origin}/post/${postId}`;
+  const shareableLink = isProfileShare
+    ? `${window.location.origin}/profile/${profileId}`
+    : storyId
+      ? `${window.location.origin}`
+      : `${window.location.origin}/post/${postId}`;
 
   // Copy link to clipboard
   const handleCopyLink = async () => {
@@ -40,11 +43,14 @@ const ShareModal = ({ postId, storyId, onClose }) => {
 
     try {
       setSharing(friendId);
-      const url = storyId
-        ? `/chat/share-story/${storyId}/${friendId}`
-        : `/chat/share/${postId}/${friendId}`;
-
-      await api.post(url);
+      if (isProfileShare) {
+        await api.post(`/chat/share-profile/${profileId}/${friendId}`);
+      } else {
+        const url = storyId
+          ? `/chat/share-story/${storyId}/${friendId}`
+          : `/chat/share/${postId}/${friendId}`;
+        await api.post(url);
+      }
       setSharedTo(prev => [...prev, friendId]);
     } catch (err) {
       console.error("Failed to share:", err);
@@ -72,7 +78,9 @@ const ShareModal = ({ postId, storyId, onClose }) => {
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-gray-100">
           <h3 className="font-semibold text-lg">
-            {view === "main" ? (storyId ? "Share story" : "Share post") : "Send to friend"}
+            {view === "main"
+              ? (isProfileShare ? "Share profile" : (storyId ? "Share story" : "Share post"))
+              : "Send to friend"}
           </h3>
           <button
             onClick={view === "friends" ? () => setView("main") : onClose}

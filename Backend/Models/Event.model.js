@@ -10,6 +10,11 @@ const eventSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
+    // Event is removed 24h after the event day ends
+    expiresAt: {
+        type: Date,
+        required: true
+    },
     time: {
         type: String,
         required: true
@@ -34,5 +39,8 @@ const eventSchema = new mongoose.Schema({
         required: true
     }
 }, { timestamps: true });
+
+// MongoDB TTL cleanup (removes docs when expiresAt is reached)
+eventSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const Event = mongoose.model("Event", eventSchema);

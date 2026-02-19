@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useProfileStore } from '../Store/ProfileStore.js';
 import { usePostStore } from '../Store/PostStore.js';
 import { useFriendStore } from '../Store/FriendStore.js';
-import { BadgeCheck, Grid3X3, Bookmark, Heart, ArrowLeft, MessageCircle, Lock } from "lucide-react";
+import { useUserStore } from '../Store/UserStore.js';
+import { BadgeCheck, Grid3X3, Heart, ArrowLeft, MessageCircle, Lock, Share2 } from "lucide-react";
+import ShareModal from "../Components/Post/ShareModal.jsx";
 
 import ProfileSkeleton from '../Components/ProfileSkeleton.jsx';
 import Avatar from '../Components/Avatar.jsx';
@@ -11,13 +13,15 @@ import Avatar from '../Components/Avatar.jsx';
 const OtherUserProfile = () => {
     const { userId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
     const [activeTab, setActiveTab] = useState("posts");
+    const [showShareModal, setShowShareModal] = useState(false);
 
     // Stores
     const { profile, isOwner, loading, error: profileError, fetchProfileById } = useProfileStore();
     const { userPosts, fetchUserPosts, error: postError } = usePostStore();
+    const { users, fetchUsers } = useUserStore();
     const {
-        friends,
         fetchFriends,
         fetchBlockedUsers,
         getFriendStatus,
@@ -47,10 +51,19 @@ const OtherUserProfile = () => {
             }
             fetchProfileById(userId);
             fetchUserPosts(userId);
+            fetchUsers();
             fetchFriends();
             fetchBlockedUsers();
         }
-    }, [userId, navigate, fetchProfileById, fetchUserPosts, fetchFriends, fetchBlockedUsers]);
+    }, [userId, navigate, fetchProfileById, fetchUserPosts, fetchUsers, fetchFriends, fetchBlockedUsers]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const requestedTab = params.get("tab");
+        if (requestedTab === "friends" || requestedTab === "posts") {
+            setActiveTab(requestedTab);
+        }
+    }, [location.search]);
 
     const relationshipStatus = getFriendStatus(userId);
     const [actionLoading, setActionLoading] = useState(false);
@@ -82,6 +95,10 @@ const OtherUserProfile = () => {
             await blockUser(userId);
         }
         setBlockLoading(false);
+    };
+
+    const handleShareProfile = () => {
+        setShowShareModal(true);
     };
 
     const renderActionButtons = () => {
@@ -157,8 +174,7 @@ const OtherUserProfile = () => {
 
     const tabs = [
         { id: "posts", label: "Posts", icon: Grid3X3 },
-        { id: "saved", label: "Saved", icon: Bookmark },
-        { id: "liked", label: "Liked", icon: Heart },
+        { id: "friends", label: "Friends", icon: MessageCircle },
     ];
 
     if (loading) {
@@ -167,12 +183,15 @@ const OtherUserProfile = () => {
 
     // Handle Profile Load Error
     if (profileError && !profile) {
+        const isPrivateProfile = profileError.toLowerCase().includes("private");
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-white p-6 text-center">
                 <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-4">
-                    <ArrowLeft className="w-8 h-8" />
+                    {isPrivateProfile ? <Lock className="w-8 h-8" /> : <ArrowLeft className="w-8 h-8" />}
                 </div>
-                <h2 className="text-xl font-bold text-gray-900 mb-2">Profile Not Found</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">
+                    {isPrivateProfile ? "Private Profile" : "Profile Not Found"}
+                </h2>
                 <p className="text-gray-500 mb-6 max-w-xs">{profileError}</p>
                 <button
                     onClick={() => navigate(-1)}
@@ -187,8 +206,13 @@ const OtherUserProfile = () => {
     if (!profile) return null;
 
     const isPrivateAccount = postError && postError.includes("private");
+    const profileFriendIds = Array.isArray(profile.friends)
+        ? profile.friends.map((id) => String(id))
+        : [];
+    const profileFriends = users.filter((u) => profileFriendIds.includes(String(u._id)));
 
     return (
+        <>
         <div className="w-full h-full overflow-auto bg-white pb-24 md:pb-0">
             {/* Cover Image */}
             <div className="relative h-32 sm:h-44 md:h-52 overflow-hidden">
@@ -236,14 +260,14 @@ const OtherUserProfile = () => {
                     </div>
 
                     <div className="flex justify-center gap-8 mt-3">
-                        <div className="text-center">
+                        <button className="text-center" onClick={() => setActiveTab("friends")}>
                             <p className="font-bold text-gray-900">{profile.friends?.length ?? profile.friendsCount ?? 0}</p>
                             <p className="text-xs text-gray-500">Friends</p>
-                        </div>
-                        <div className="text-center">
+                        </button>
+                        <button className="text-center" onClick={() => setActiveTab("posts")}>
                             <p className="font-bold text-gray-900">{userPosts.length || "0"}</p>
                             <p className="text-xs text-gray-500">Posts</p>
-                        </div>
+                        </button>
                     </div>
 
                     <div className="text-center mt-4">
@@ -289,6 +313,13 @@ const OtherUserProfile = () => {
                     <div className="mt-4 flex  gap-3">
                         {renderActionButtons()}
                         <button
+                            onClick={handleShareProfile}
+                            className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition shadow-sm"
+                            title="Share profile"
+                        >
+                            <Share2 className="w-4 h-4" />
+                        </button>
+                        <button
                             onClick={handleBlockToggle}
                             disabled={blockLoading}
                             className={`px-4 py-2.5 text-sm font-medium rounded-full transition shadow-sm ${blocked
@@ -316,14 +347,14 @@ const OtherUserProfile = () => {
 
                         <div className="flex justify-center gap-8 mt-3">
 
-                            <div className="text-center">
-                                <p className="font-bold text-gray-900">{friends.length}</p>
+                            <button className="text-center" onClick={() => setActiveTab("friends")}>
+                                <p className="font-bold text-gray-900">{profile.friends?.length ?? profile.friendsCount ?? 0}</p>
                                 <p className="text-xs text-gray-500">Friends</p>
-                            </div>
-                            <div className="text-center">
+                            </button>
+                            <button className="text-center" onClick={() => setActiveTab("posts")}>
                                 <p className="font-bold text-gray-900">{userPosts.length || "0"}</p>
                                 <p className="text-xs text-gray-500">Posts</p>
-                            </div>
+                            </button>
                         </div>
                     </div>
 
@@ -364,6 +395,13 @@ const OtherUserProfile = () => {
 
                         <div className="mt-5 flex gap-3">
                             {renderActionButtons()}
+                            <button
+                                onClick={handleShareProfile}
+                                className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition shadow-sm"
+                                title="Share profile"
+                            >
+                                <Share2 className="w-4 h-4" />
+                            </button>
                             <button
                                 onClick={handleBlockToggle}
                                 disabled={blockLoading}
@@ -465,25 +503,51 @@ const OtherUserProfile = () => {
                     </>
                 )}
 
-                {activeTab === "saved" && (
-                    <div className="text-center py-12 sm:py-16">
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Bookmark className="w-8 h-8 sm:w-10 sm:h-10 text-gray-300" />
-                        </div>
-                        <p className="text-gray-500 font-medium">No saved posts</p>
-                    </div>
-                )}
-
-                {activeTab === "liked" && (
-                    <div className="text-center py-12 sm:py-16">
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Heart className="w-8 h-8 sm:w-10 sm:h-10 text-gray-300" />
-                        </div>
-                        <p className="text-gray-500 font-medium">No liked posts</p>
-                    </div>
+                {activeTab === "friends" && (
+                    <>
+                        {profileFriends.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {profileFriends.map((friend) => (
+                                    <button
+                                        key={friend._id}
+                                        onClick={() => navigate(`/profile/${friend._id}`)}
+                                        className="w-full text-left bg-white border border-gray-100 rounded-xl p-3 hover:border-gray-200 hover:shadow-sm transition"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Avatar
+                                                src={friend.avatar}
+                                                name={friend.firstname ? `${friend.firstname} ${friend.lastname || ""}` : friend.username}
+                                                className="w-11 h-11 rounded-full text-sm"
+                                            />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-semibold text-gray-900 truncate">
+                                                    {friend.firstname ? `${friend.firstname} ${friend.lastname || ""}` : friend.username}
+                                                </p>
+                                                <p className="text-xs text-gray-500 truncate">@{friend.username}</p>
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-12 sm:py-16">
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <MessageCircle className="w-8 h-8 sm:w-10 sm:h-10 text-gray-300" />
+                                </div>
+                                <p className="text-gray-500 font-medium">No friends to show</p>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
         </div>
+        {showShareModal && (
+            <ShareModal
+                profileId={userId}
+                onClose={() => setShowShareModal(false)}
+            />
+        )}
+        </>
     );
 };
 

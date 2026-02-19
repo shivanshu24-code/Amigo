@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useProfileStore } from "../Store/ProfileStore.js";
 import { usePostStore } from "../Store/PostStore.js";
 import { useFriendStore } from "../Store/FriendStore.js";
@@ -9,8 +10,11 @@ import PostGridSkeleton from "../Components/PostGridSkeleton.jsx";
 import Avatar from "../Components/Avatar.jsx";
 
 const ProfilePage = () => {
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState("posts");
     const [showEditModal, setShowEditModal] = useState(false);
+    const [confirmDeletePostId, setConfirmDeletePostId] = useState(null);
+    const [isDeletingPost, setIsDeletingPost] = useState(false);
 
     // Use ProfileStore
     const { profile, isOwner, loading, fetchMyProfile } = useProfileStore();
@@ -38,15 +42,22 @@ const ProfilePage = () => {
 
     const tabs = [
         { id: "posts", label: "Posts", icon: Grid3X3 },
+        { id: "friends", label: "Friends", icon: MessageCircle },
         { id: "saved", label: "Saved", icon: Bookmark },
         { id: "liked", label: "Liked", icon: Heart },
     ];
 
     const handleDeletePost = async (e, postId) => {
         e.stopPropagation();
-        if (window.confirm("Are you sure you want to delete this post?")) {
-            await deletePost(postId);
-        }
+        setConfirmDeletePostId(postId);
+    };
+
+    const handleConfirmDeletePost = async () => {
+        if (!confirmDeletePostId || isDeletingPost) return;
+        setIsDeletingPost(true);
+        await deletePost(confirmDeletePostId);
+        setIsDeletingPost(false);
+        setConfirmDeletePostId(null);
     };
 
     return (
@@ -108,14 +119,14 @@ const ProfilePage = () => {
                     {/* Stats Row - Centered */}
                     <div className="flex justify-center gap-8 mt-3">
 
-                        <div className="text-center">
+                        <button className="text-center" onClick={() => setActiveTab("friends")}>
                             <p className="font-bold text-gray-900">{friends.length}</p>
                             <p className="text-xs text-gray-500">Friends</p>
-                        </div>
-                        <div className="text-center">
+                        </button>
+                        <button className="text-center" onClick={() => setActiveTab("posts")}>
                             <p className="font-bold text-gray-900">{userPosts.length || "0"}</p>
                             <p className="text-xs text-gray-500">Posts</p>
-                        </div>
+                        </button>
                     </div>
 
                     {/* Name - Centered */}
@@ -196,14 +207,14 @@ const ProfilePage = () => {
 
                         {/* Stats */}
                         <div className="flex items-center gap-6 ml-4 mb-4">
-                            <div>
+                            <button onClick={() => setActiveTab("friends")}>
                                 <span className="font-bold text-gray-900 text-lg">{friends.length}</span>
                                 <span className="text-gray-500 ml-1">Friends</span>
-                            </div>
-                            <div>
+                            </button>
+                            <button onClick={() => setActiveTab("posts")}>
                                 <span className="font-bold text-gray-900 text-lg">{userPosts.length}</span>
                                 <span className="text-gray-500 ml-1">Posts</span>
-                            </div>
+                            </button>
                         </div>
 
                         {/* Edit Button */}
@@ -391,6 +402,43 @@ const ProfilePage = () => {
                     </>
                 )}
 
+                {activeTab === "friends" && (
+                    <>
+                        {friends.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {friends.map((friend) => (
+                                    <button
+                                        key={friend._id}
+                                        onClick={() => navigate(`/profile/${friend._id}`)}
+                                        className="w-full text-left bg-white border border-gray-100 rounded-xl p-3 hover:border-gray-200 hover:shadow-sm transition"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Avatar
+                                                src={friend.avatar}
+                                                name={friend.firstname ? `${friend.firstname} ${friend.lastname || ""}` : friend.username}
+                                                className="w-11 h-11 rounded-full text-sm"
+                                            />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-semibold text-gray-900 truncate">
+                                                    {friend.firstname ? `${friend.firstname} ${friend.lastname || ""}` : friend.username}
+                                                </p>
+                                                <p className="text-xs text-gray-500 truncate">@{friend.username}</p>
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-12 sm:py-16">
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <MessageCircle className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" />
+                                </div>
+                                <p className="text-gray-600 font-medium">No friends yet</p>
+                            </div>
+                        )}
+                    </>
+                )}
+
                 {activeTab === "liked" && (
                     <div className="text-center py-12 sm:py-16">
                         <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -401,6 +449,37 @@ const ProfilePage = () => {
                     </div>
                 )}
             </div>
+
+            {confirmDeletePostId && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/40"
+                        onClick={() => !isDeletingPost && setConfirmDeletePostId(null)}
+                    />
+                    <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-100 p-5">
+                        <h3 className="text-base font-semibold text-gray-900">Delete post?</h3>
+                        <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                            Do you really want to delete this post?
+                        </p>
+                        <div className="mt-4 flex items-center justify-end gap-2">
+                            <button
+                                onClick={() => setConfirmDeletePostId(null)}
+                                disabled={isDeletingPost}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmDeletePost}
+                                disabled={isDeletingPost}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {isDeletingPost ? "Deleting..." : "Delete"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 };

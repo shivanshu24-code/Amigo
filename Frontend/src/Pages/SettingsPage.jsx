@@ -14,7 +14,8 @@ import {
     Bell,
     Monitor,
     ShieldCheck,
-    Target
+    Target,
+    MessageSquare
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../Store/AuthStore.js";
@@ -52,7 +53,7 @@ const SettingsPage = () => {
     const navigate = useNavigate();
     const logout = useAuthStore((state) => state.logout);
     return (
-        <div className="h-full overflow-y-auto bg-gray-50/50 pb-20">
+        <div className="h-full overflow-y-auto bg-gray-50/50 dark:bg-black pb-20">
             <div className="max-w-2xl mx-auto py-8 px-4">
                 {/* Header */}
                 <div className="mb-8 px-4">
@@ -122,6 +123,13 @@ const SettingsPage = () => {
                         description="Choose who can tag and mention you"
                         color="text-blue-600"
                         onClick={() => navigate("/settings/tags-mentions")}
+                    />
+                    <SettingsItem
+                        icon={MessageSquare}
+                        label="Chat settings"
+                        description="Read receipts and blocked chats"
+                        color="text-indigo-600"
+                        onClick={() => navigate("/settings/chat")}
                     />
                 </SettingsSection>
 

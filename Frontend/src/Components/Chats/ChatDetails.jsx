@@ -275,37 +275,13 @@ const ChatDetails = ({ friend, onClose, focusSection = "media", onlySection = nu
                 {/* Privacy & Support (Clear Chat) */}
                 {!onlySection && (
                 <div className="p-4 border-b border-gray-100">
-                    {!confirmClear ? (
-                        <button
-                            onClick={() => setConfirmClear(true)}
-                            className="flex items-center gap-2 w-full px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium text-sm"
-                        >
-                            <FiTrash2 className="w-5 h-5" />
-                            Clear Recent Chat
-                        </button>
-                    ) : (
-                        <div className="bg-red-50 p-3 rounded-xl space-y-3">
-                            <p className="text-xs text-red-700 font-medium leading-relaxed">
-                                This will remove the chat history for you. Other participants will still be able to see the messages.
-                            </p>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={handleClearChat}
-                                    disabled={actionLoading === 'clearing'}
-                                    className="flex-1 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs font-bold disabled:opacity-50"
-                                >
-                                    {actionLoading === 'clearing' ? 'Clearing...' : 'Clear'}
-                                </button>
-                                <button
-                                    onClick={() => setConfirmClear(false)}
-                                    disabled={actionLoading === 'clearing'}
-                                    className="flex-1 px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-xs font-bold"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    <button
+                        onClick={() => setConfirmClear(true)}
+                        className="flex items-center gap-2 w-full px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium text-sm"
+                    >
+                        <FiTrash2 className="w-5 h-5" />
+                        Clear Recent Chat
+                    </button>
                 </div>
                 )}
 
@@ -342,6 +318,37 @@ const ChatDetails = ({ friend, onClose, focusSection = "media", onlySection = nu
                     </div>
                 )}
             </div>
+
+            {confirmClear && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/40"
+                        onClick={() => actionLoading !== 'clearing' && setConfirmClear(false)}
+                    />
+                    <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-100 p-5">
+                        <h3 className="text-base font-semibold text-gray-900">Clear recent chat?</h3>
+                        <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                            This will remove chat history for you only. Other participants can still see the messages.
+                        </p>
+                        <div className="mt-4 flex items-center justify-end gap-2">
+                            <button
+                                onClick={() => setConfirmClear(false)}
+                                disabled={actionLoading === 'clearing'}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleClearChat}
+                                disabled={actionLoading === 'clearing'}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {actionLoading === 'clearing' ? 'Clearing...' : 'Clear'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

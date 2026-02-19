@@ -1,11 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
 
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
     --color-dark-bg: #000000;
-    --color-dark-surface: #000000;
-    --color-dark-border: #262626;
+    --color-dark-surface: #0b0b0b;
+    --color-dark-surface-muted: #121212;
+    --color-dark-surface-elevated: #181818;
+    --color-dark-border: #2a2a2a;
     --color-dark-text-primary: #f5f5f5;
     --color-dark-text-secondary: #a8a8a8;
 }
@@ -31,12 +34,15 @@ body {
 
 /* Component Level Overrides */
 .dark .bg-white {
-    background-color: #000000 !important;
+    background-color: #0b0b0b !important;
 }
 
-.dark .bg-gray-50,
+.dark .bg-gray-50 {
+    background-color: #121212 !important;
+}
+
 .dark .bg-gray-100 {
-    background-color: #000000 !important;
+    background-color: #181818 !important;
 }
 
 /* Minimalist Borders */
@@ -45,7 +51,7 @@ body {
 .dark .border-gray-100,
 .dark .border-gray-50,
 .dark .border {
-    border-color: #262626 !important;
+    border-color: #2a2a2a !important;
 }
 
 /* Text Refinement */
@@ -68,14 +74,14 @@ body {
 .dark .hover\:bg-gray-50:hover,
 .dark .hover\:bg-gray-100:hover,
 .dark .hover\:bg-gray-200:hover {
-    background-color: #121212 !important;
+    background-color: #1d1d1d !important;
 }
 
 /* Inputs & Modals */
 .dark input,
 .dark textarea {
-    background-color: #121212 !important;
-    border-color: #262626 !important;
+    background-color: #141414 !important;
+    border-color: #2a2a2a !important;
     color: #f5f5f5 !important;
 }
 
@@ -83,14 +89,23 @@ body {
 .dark .shadow-md,
 .dark .shadow-lg,
 .dark .shadow-xl {
-    box-shadow: none !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35) !important;
 }
 
-/* Navbars & Sidebars */
-.dark .sticky,
-.dark .fixed,
+/* Navbars & headers */
 .dark nav,
 .dark header {
-    background-color: #000000 !important;
-    border-bottom: 1px solid #262626 !important;
+    background-color: #0b0b0b !important;
+    border-bottom: 1px solid #2a2a2a !important;
+}
+
+.dark .logo-title {
+    background: #f5f5f5 !important;
+}
+
+/* Reusable elevated panels in dark mode */
+.dark .panel-elevated {
+    background-color: #121212 !important;
+    border-color: #2f2f2f !important;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45) !important;
 }

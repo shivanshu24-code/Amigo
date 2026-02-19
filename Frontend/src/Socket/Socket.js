@@ -3,6 +3,7 @@ import { usePostStore } from "../Store/PostStore.js";
 import { useFriendStore } from "../Store/FriendStore.js";
 import { useChatStore } from "../Store/ChatStore.js";
 import { useCallStore } from "../Store/CallStore.js";
+import { useNotificationStore } from "../Store/NotificationStore.js";
 
 let socket = null;
 
@@ -31,13 +32,25 @@ export const connectSocket = (userId) => {
     // Listen for new likes
     socket.on("new-like", (data) => {
       console.log("❤️ New like notification:", data);
-      // You can show a toast notification here
-      // For now, just log it
+      const { addNotification } = useNotificationStore.getState();
+      addNotification({
+        type: "like",
+        text: data?.message || "Someone liked your post",
+        postId: data?.postId,
+        actorName: data?.likerName,
+      });
     });
 
     // Listen for new comments
     socket.on("new-comment", (data) => {
       console.log("💬 New comment notification:", data);
+      const { addNotification } = useNotificationStore.getState();
+      addNotification({
+        type: "comment",
+        text: data?.message || "Someone commented on your post",
+        postId: data?.postId,
+        actorName: data?.commenterName,
+      });
       // Optionally update the post's comments in store
       const { fetchComments } = usePostStore.getState();
       if (data.postId) {
@@ -87,11 +100,26 @@ export const connectSocket = (userId) => {
       setUserStopTyping(data.userId);
     });
 
+    socket.on("active-users", (data) => {
+      const { setOnlineUsers } = useChatStore.getState();
+      setOnlineUsers(data?.userIds || []);
+    });
+
+    socket.on("user-online", (data) => {
+      const { setUserOnline } = useChatStore.getState();
+      setUserOnline(data?.userId);
+    });
+
+    socket.on("user-offline", (data) => {
+      const { setUserOffline } = useChatStore.getState();
+      setUserOffline(data?.userId);
+    });
+
     // Listen for messages read notification
     socket.on("messages-read", (data) => {
       console.log("👁️ Messages read:", data);
       const { updateMessageReadStatus } = useChatStore.getState();
-      updateMessageReadStatus(data.conversationId);
+      updateMessageReadStatus(data.conversationId, data.readBy);
     });
 
     // Listen for message deletion for everyone
@@ -164,4 +192,6 @@ export const disconnectSocket = () => {
     socket.disconnect();
     socket = null;
   }
+  const { setOnlineUsers } = useChatStore.getState();
+  setOnlineUsers([]);
 };

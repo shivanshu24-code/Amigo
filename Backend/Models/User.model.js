@@ -71,6 +71,10 @@ const userschema = new mongoose.Schema({
         type: String,
         enum: ["anyone", "friends"],
         default: "anyone"
+    },
+    readReceiptsEnabled: {
+        type: Boolean,
+        default: true
     }
 }, { timestamps: true })
 export default mongoose.model("User", userschema)

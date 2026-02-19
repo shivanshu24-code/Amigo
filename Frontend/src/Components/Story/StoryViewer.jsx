@@ -1,4 +1,4 @@
-import { X, ChevronLeft, ChevronRight, MoreVertical, Eye, Share2, Trash2, Settings, AtSign, Send } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, MoreVertical, Eye, Share2, Trash2, Settings, AtSign, Send, Star } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import PauseLayout from "../../Layout/PauseLayout";
 import { useStoryStore } from "../../Store/StoryStore";
@@ -15,6 +15,8 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [showViewers, setShowViewers] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingStory, setDeletingStory] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [isFriend, setIsFriend] = useState(false);
@@ -81,10 +83,12 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
   };
 
   const handleDelete = async () => {
-    if (story?._id) {
-      await deleteStory(story._id);
-      onClose();
-    }
+    if (!story?._id || deletingStory) return;
+    setDeletingStory(true);
+    await deleteStory(story._id);
+    setDeletingStory(false);
+    setShowDeleteConfirm(false);
+    onClose();
   };
 
   const handleShowViewers = async () => {
@@ -163,8 +167,12 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
 
       {/* ❌ Close */}
       <button
-        onClick={onClose}
-        className="absolute top-4 right-4 text-white z-50 hover:bg-white/10 p-2 rounded-full transition-colors"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        className="absolute top-2 right-2 sm:top-4 sm:right-4 text-white z-50 hover:bg-white/10 p-2 rounded-full transition-colors"
       >
         <X size={28} />
       </button>
@@ -172,22 +180,22 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
       {/* ⬅ Prev */}
       <button
         onClick={goPrev}
-        className="absolute left-4 top-1/2 -translate-y-1/2 text-white z-[60] hover:bg-white/10 p-2 rounded-full transition-colors"
+        className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 text-white z-[60] hover:bg-white/10 p-1.5 sm:p-2 rounded-full transition-colors"
       >
-        <ChevronLeft size={36} />
+        <ChevronLeft size={28} className="sm:w-9 sm:h-9" />
       </button>
 
       {/* ➡ Next */}
       <button
         onClick={goNext}
-        className="absolute right-4 top-1/2 -translate-y-1/2 text-white z-[60] hover:bg-white/10 p-2 rounded-full transition-colors"
+        className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 text-white z-[60] hover:bg-white/10 p-1.5 sm:p-2 rounded-full transition-colors"
       >
-        <ChevronRight size={36} />
+        <ChevronRight size={28} className="sm:w-9 sm:h-9" />
       </button>
 
       {/* 📱 Instagram-style story container */}
       <div
-        className="relative w-[460px] h-[800px] bg-black rounded-xl overflow-hidden"
+        className="relative w-screen h-screen sm:w-[460px] sm:h-[800px] max-w-full max-h-full bg-black sm:rounded-xl overflow-hidden"
         onClick={togglePause}
       >
 
@@ -200,7 +208,7 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
         </div>
 
         {/* Header - Author info + Menu */}
-        <div className="absolute top-3 left-0 w-full px-3 z-50 flex items-center justify-between">
+        <div className="absolute top-3 left-0 w-full px-3 pr-14 sm:pr-3 z-50 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <img
               src={story.author?.avatar || `https://ui-avatars.com/api/?name=${story.author?.username}`}
@@ -248,7 +256,7 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
                   </button>
                   <hr className="my-1" />
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+                    onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); setShowMenu(false); }}
                     className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3"
                   >
                     <Trash2 size={16} />
@@ -366,6 +374,37 @@ const StoryViewer = ({ stories, startIndex, onClose }) => {
 
 
       {/* 👥 Viewers Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => !deletingStory && setShowDeleteConfirm(false)}
+          />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-100 p-5">
+            <h3 className="text-base font-semibold text-gray-900">Delete story?</h3>
+            <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+              Do you really want to delete this story?
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deletingStory}
+                className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deletingStory}
+                className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+              >
+                {deletingStory ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showViewers && (
         <div
           className="absolute inset-0 bg-black/50 z-[80] flex items-center justify-center"

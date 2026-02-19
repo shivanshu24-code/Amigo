@@ -67,9 +67,15 @@ export const initializeSocket = (server) => {
         // Register user with their userId
         socket.on("register", (userId) => {
             if (userId) {
-                currentUserId = userId;
-                userSockets.set(userId, socket.id);
-                console.log(`📝 User ${userId} registered with socket ${socket.id}`);
+                const normalizedUserId = userId.toString();
+                currentUserId = normalizedUserId;
+                userSockets.set(normalizedUserId, socket.id);
+                console.log(`[socket] User ${normalizedUserId} registered with socket ${socket.id}`);
+
+                socket.emit("active-users", {
+                    userIds: Array.from(userSockets.keys()),
+                });
+                socket.broadcast.emit("user-online", { userId: normalizedUserId });
             }
         });
 
@@ -322,7 +328,8 @@ export const initializeSocket = (server) => {
             for (const [userId, socketId] of userSockets.entries()) {
                 if (socketId === socket.id) {
                     userSockets.delete(userId);
-                    console.log(`🔴 User ${userId} disconnected`);
+                    console.log(`[socket] User ${userId} disconnected`);
+                    socket.broadcast.emit("user-offline", { userId });
                     break;
                 }
             }

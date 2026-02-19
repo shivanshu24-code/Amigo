@@ -62,6 +62,34 @@ export const getAllUsers = async (req, res) => {
 export const getUserById = async (req, res) => {
     try {
         const { userId } = req.params;
+        const currentUserId = req.user?._id;
+
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID"
+            });
+        }
+
+        const targetUser = await User.findById(userId).select("isPrivate friends");
+        if (!targetUser) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        const isSelf = currentUserId && targetUser._id.toString() === currentUserId.toString();
+        const isFriend = targetUser.friends?.some(
+            (friendId) => friendId.toString() === currentUserId?.toString()
+        );
+
+        if (targetUser.isPrivate && !isSelf && !isFriend) {
+            return res.status(403).json({
+                success: false,
+                message: "This account is private. Only friends can view this profile."
+            });
+        }
 
         const user = await User.aggregate([
             {

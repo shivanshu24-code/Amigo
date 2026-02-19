@@ -155,7 +155,20 @@ export const getStories = async (req, res) => {
       },
       {
         $addFields: {
-          viewersCount: { $size: { $ifNull: ["$viewers", []] } },
+          viewersCount: {
+            $size: {
+              $setUnion: [
+                [],
+                {
+                  $map: {
+                    input: { $ifNull: ["$viewers", []] },
+                    as: "v",
+                    in: "$$v.user"
+                  }
+                }
+              ]
+            }
+          },
           isAuthor: { $eq: ["$authorData._id", currentUserObjectId] }
         }
       },
@@ -253,17 +266,19 @@ export const viewStory = async (req, res) => {
       return res.json({ message: "View recorded", isAuthor: true });
     }
 
-    // Check if user already viewed
-    const alreadyViewed = story.viewers.some(
-      v => v.user.toString() === userId.toString()
+    // Atomic write: only add viewer if this user is not already in viewers.user
+    await Story.updateOne(
+      { _id: storyId, "viewers.user": { $ne: userId } },
+      { $push: { viewers: { user: userId, viewedAt: new Date() } } }
     );
 
-    if (!alreadyViewed) {
-      story.viewers.push({ user: userId, viewedAt: new Date() });
-      await story.save();
-    }
+    // Return de-duplicated count for safety with old data
+    const latestStory = await Story.findById(storyId).select("viewers");
+    const uniqueViewerIds = new Set(
+      (latestStory?.viewers || []).map(v => v.user?.toString()).filter(Boolean)
+    );
 
-    res.json({ message: "View recorded", viewersCount: story.viewers.length });
+    res.json({ message: "View recorded", viewersCount: uniqueViewerIds.size });
   } catch (err) {
     console.error("View story error:", err);
     res.status(500).json({ message: "Failed to record view" });
@@ -294,10 +309,16 @@ export const getStoryViewers = async (req, res) => {
       return res.status(403).json({ message: "Not authorized to view this" });
     }
 
-    const viewers = (story.viewers || []).map(v => ({
-      user: v.user,
-      viewedAt: v.viewedAt
-    }));
+    // De-duplicate by user so same user cannot appear twice in UI
+    const uniqueByUser = new Map();
+    for (const v of story.viewers || []) {
+      const uid = v.user?._id?.toString();
+      if (!uid) continue;
+      if (!uniqueByUser.has(uid)) {
+        uniqueByUser.set(uid, { user: v.user, viewedAt: v.viewedAt });
+      }
+    }
+    const viewers = Array.from(uniqueByUser.values());
 
     res.json({
       viewersCount: viewers.length,

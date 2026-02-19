@@ -14,7 +14,7 @@ import { useNavigate } from "react-router-dom";
 
 const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsComponent: DetailsComponent }) => {
   const navigate = useNavigate();
-  const { messages, sendMessage, sendAttachment, isTyping, sendTyping, stopTyping, messagesLoading, blockUser, unblockUser, isBlocked } = useChatStore();
+  const { messages, sendMessage, sendAttachment, isTyping, sendTyping, stopTyping, messagesLoading, blockUser, unblockUser, isBlocked, markAsRead, onlineUsers } = useChatStore();
   const { user, e2eeEnabled } = useAuthStore();
   const { friends } = useFriendStore();
   const { initiateCall, initiateVoiceCall, error: callError } = useCallStore();
@@ -38,9 +38,11 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
   const messageInputRef = useRef(null);
   const docInputRef = useRef(null);
   const mediaInputRef = useRef(null);
+  const lastMarkedMessageRef = useRef(null);
   const isChatEncrypted = friend?.isGroup
     ? Boolean(e2eeEnabled) && Array.isArray(friend?.participants) && friend.participants.length > 0 && friend.participants.every((p) => Boolean(p?.publicKey))
     : Boolean(friend?.publicKey) && Boolean(e2eeEnabled);
+  const isFriendOnline = !friend?.isGroup && onlineUsers.includes(String(friend?._id || ""));
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -48,6 +50,30 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
       chatEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (!friend?.isGroup && friend?.conversationId) {
+      markAsRead(friend.conversationId);
+    }
+  }, [friend?._id, friend?.conversationId, friend?.isGroup, markAsRead]);
+
+  useEffect(() => {
+    lastMarkedMessageRef.current = null;
+  }, [friend?._id, friend?.conversationId]);
+
+  useEffect(() => {
+    if (!friend || friend.isGroup || !friend.conversationId || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.read) return;
+
+    const senderId = typeof lastMessage.sender === "object" ? lastMessage.sender?._id : lastMessage.sender;
+    const isIncoming = String(senderId || "") !== String(user?._id || "");
+    if (!isIncoming) return;
+    if (lastMarkedMessageRef.current === lastMessage._id) return;
+
+    lastMarkedMessageRef.current = lastMessage._id;
+    markAsRead(friend.conversationId);
+  }, [messages, friend, user?._id, markAsRead]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -276,7 +302,8 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
   const getMessageStatus = (msg, isMe) => {
     if (!isMe) return null;
     if (msg.sending) return "sending";
-    if (msg.read) return "seen";
+    const canShowSeen = friend?.isGroup || friend?.readReceiptsEnabled !== false;
+    if (msg.read && canShowSeen) return "seen";
     return "delivered";
   };
 
@@ -298,7 +325,7 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
   // No friend selected - show placeholder
   if (!friend) {
     return (
-      <div className="h-full flex-1 flex flex-col bg-gray-50 items-center justify-center">
+      <div className="h-full flex-1 flex flex-col bg-white dark:bg-black items-center justify-center">
         <div className="text-center">
           <div className="w-24 h-24 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <svg className="w-12 h-12 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -313,7 +340,7 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
   }
 
   return (
-    <div className="h-full flex-1 flex flex-col bg-gray-100 relative">
+    <div className="h-full flex-1 flex flex-col bg-white dark:bg-black relative">
       {/* ── MOBILE DETAILS OVERLAY ── */}
       {/* 
         This full-screen overlay slides in on mobile when "View details" is tapped.
@@ -368,7 +395,7 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
       )}
 
       {/* Chat Header */}
-      <div className="flex justify-between items-center h-16 px-5 bg-white border-b border-gray-200">
+      <div className="flex justify-between items-center h-16 px-5 bg-white dark:bg-[#0b0b0b] border-b border-gray-200 dark:border-[#2a2a2a]">
         <div className="flex items-center gap-3">
           {/* Mobile Back Button */}
           <button
@@ -431,9 +458,9 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
               </button>
             ) : isTyping ? (
               <p className="text-sm text-green-600">typing...</p>
-            ) : (
+            ) : isFriendOnline ? (
               <p className="text-sm text-green-600">Online now</p>
-            )}
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-4 text-gray-500">
@@ -500,11 +527,11 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
       </div>
 
       {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 relative">
+      <div className="flex-1 overflow-y-auto px-3 pt-6 pb-4 relative">
         {/* Floating Encryption Banner */}
         {isChatEncrypted && (
-          <div className="sticky top-0 z-20 flex justify-center mb-6 pointer-events-none -mx-3">
-            <div className="bg-white/70 backdrop-blur-md border border-white/50 px-4 py-1.5 rounded-full shadow-sm text-center max-w-xs pointer-events-auto">
+          <div className="sticky top-2 z-20 flex justify-center mb-5 pointer-events-none">
+            <div className="bg-white/80 dark:bg-[#1a1a1a]/90 backdrop-blur-md border border-white/50 dark:border-[#333] px-4 py-1.5 rounded-full shadow-sm text-center max-w-xs pointer-events-auto">
               <p className="text-[10px] text-gray-500 font-semibold flex items-center justify-center gap-1.5 uppercase tracking-wider">
                 <svg className="w-3 h-3 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
@@ -548,6 +575,7 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
                     senderName={friend.isGroup && !isMe ? msg.sender?.username : null}
                     status={getMessageStatus(msg, isMe)}
                     sharedPost={msg.sharedPost}
+                    sharedProfile={msg.sharedProfile}
                     messageId={msg._id}
                     isDeletedForEveryone={msg.isDeletedForEveryone}
                     isStoryReply={msg.isStoryReply}
@@ -681,6 +709,7 @@ const MainChat = ({ friend, onToggleDetails, onOpenDetails, onBack, detailsCompo
           <p className="text-gray-500 text-sm">You are not friends with this user. <span className="font-medium text-gray-700">Add them to send messages.</span></p>
         </div>
       )}
+
     </div>
   );
 };

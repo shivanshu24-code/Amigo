@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Bell, MessageCircle, User, X, UserPlus, Check, LogOut, Settings, Moon, Sun } from "lucide-react";
+import { Bell, MessageCircle, User, X, UserPlus, Check, LogOut, Settings, Heart, Moon, Sun } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useChatStore } from "../Store/ChatStore";
 import { useFriendStore } from "../Store/FriendStore";
 import { useAuthStore } from "../Store/AuthStore";
+import { useNotificationStore } from "../Store/NotificationStore";
+import { useThemeStore } from "../Store/ThemeStore";
 import Avatar from "./Avatar";
 
 const Navbar = () => {
@@ -19,6 +21,9 @@ const Navbar = () => {
   const { conversations, fetchConversations, setCurrentChat, setMobileChatOpen, loading } = useChatStore();
   const { pendingRequests, fetchPendingRequests, acceptRequest, rejectRequest } = useFriendStore();
   const { user, logout } = useAuthStore();
+  const { notifications, markAllAsRead } = useNotificationStore();
+  const { theme, toggleTheme } = useThemeStore();
+  const unreadSocialCount = notifications.filter((n) => !n.read).length;
 
   // Fetch data when dropdowns open
   useEffect(() => {
@@ -31,8 +36,9 @@ const Navbar = () => {
   useEffect(() => {
     if (showNotifications) {
       fetchPendingRequests();
+      markAllAsRead();
     }
-  }, [showNotifications]);
+  }, [showNotifications, fetchPendingRequests, markAllAsRead]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -73,20 +79,28 @@ const Navbar = () => {
     navigate("/login");
   };
 
-  // Mock notifications - replace with real data
-  const recentNotifications = [
-    { id: 1, text: "Rahul liked your post", time: "2m ago" },
-    { id: 2, text: "Megha commented on your photo", time: "1h ago" },
-    { id: 3, text: "New story from Arjun", time: "3h ago" },
-  ];
+  const formatRelativeTime = (dateValue) => {
+    const date = new Date(dateValue);
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+
+    if (diffMin < 1) return "now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+
+    const diffDay = Math.floor(diffHr / 24);
+    return `${diffDay}d ago`;
+  };
 
   return (
-    <div className="sticky top-0 z-50 w-full bg-white border-b border-gray-200 rounded-lg">
+    <div className="sticky top-0 z-50 w-full bg-white dark:bg-[#0b0b0b] border-b border-gray-200 dark:border-[#2a2a2a] rounded-lg">
       <div className="flex items-center justify-between px-3 md:px-6 h-16">
 
         <h1
           onClick={() => navigate("/feed")}
-          className="font-bold text-4xl bg-black bg-clip-text text-transparent cursor-pointer"
+          className="font-extrabold text-3xl md:text-4xl text-gray-900 dark:text-white tracking-tight cursor-pointer select-none"
         >
           Amigo
         </h1>
@@ -95,25 +109,27 @@ const Navbar = () => {
 
           {/* NOTIFICATIONS */}
           <div className="relative" ref={notifRef}>
-            <div
-              className="relative cursor-pointer"
+            <button
+              type="button"
+              className="relative cursor-pointer bg-transparent p-0 border-0"
               onClick={() => {
                 setShowNotifications(!showNotifications);
                 setShowChats(false);
                 setShowProfileMenu(false);
               }}
+              title="Notifications"
             >
-              <Bell className="w-6 h-6 text-gray-700 hover:text-black transition" />
-              {pendingRequests?.length > 0 && (
+              <Bell className="w-6 h-6 text-gray-700 dark:text-gray-200 hover:text-black dark:hover:text-white transition" />
+              {(pendingRequests?.length > 0 || unreadSocialCount > 0) && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
-                  {pendingRequests.length}
+                  {(pendingRequests?.length || 0) + unreadSocialCount}
                 </span>
               )}
-            </div>
+            </button>
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="fixed left-1/2 -translate-x-1/2 top-20 w-[calc(100%-2rem)] max-w-sm md:absolute md:left-auto md:translate-x-0 md:right-0 md:top-auto md:mt-2 md:w-80 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50">
+              <div className="panel-elevated fixed left-1/2 -translate-x-1/2 top-20 w-[calc(100%-2rem)] max-w-sm md:absolute md:left-auto md:translate-x-0 md:right-0 md:top-auto md:mt-2 md:w-80 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50">
                 <div className="p-4 border-b border-gray-100">
                   <h3 className="font-semibold text-gray-800">Notifications</h3>
                 </div>
@@ -168,14 +184,28 @@ const Navbar = () => {
                     <h4 className="text-xs font-semibold text-gray-500 uppercase">Recent</h4>
                   </div>
                   <div className="max-h-48 overflow-y-auto">
-                    {recentNotifications.map((notif) => (
+                    {notifications.length === 0 ? (
+                      <p className="px-4 py-3 text-sm text-gray-500">No recent activity</p>
+                    ) : notifications.map((notif) => (
                       <div key={notif.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer">
-                        <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                          <Bell className="w-5 h-5 text-purple-600" />
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${notif.type === "like" ? "bg-pink-100 dark:bg-pink-900/40" : "bg-indigo-100 dark:bg-indigo-900/40"}`}>
+                          {notif.type === "like" ? (
+                            <Heart className="w-5 h-5 text-pink-600" />
+                          ) : (
+                            <MessageCircle className="w-5 h-5 text-indigo-600" />
+                          )}
                         </div>
-                        <div className="flex-1">
+                        <div
+                          className="flex-1"
+                          onClick={() => {
+                            if (notif.postId) {
+                              navigate(`/post/${notif.postId}`);
+                              setShowNotifications(false);
+                            }
+                          }}
+                        >
                           <p className="text-sm text-gray-800">{notif.text}</p>
-                          <p className="text-xs text-gray-400">{notif.time}</p>
+                          <p className="text-xs text-gray-400">{formatRelativeTime(notif.createdAt)}</p>
                         </div>
                       </div>
                     ))}
@@ -187,25 +217,27 @@ const Navbar = () => {
 
           {/* CHATS */}
           <div className="relative" ref={chatRef}>
-            <div
-              className="relative cursor-pointer"
+            <button
+              type="button"
+              className="relative cursor-pointer bg-transparent p-0 border-0"
               onClick={() => {
                 setShowChats(!showChats);
                 setShowNotifications(false);
                 setShowProfileMenu(false);
               }}
+              title="Chats"
             >
-              <MessageCircle className="w-6 h-6 text-gray-700 hover:text-black transition" />
+              <MessageCircle className="w-6 h-6 text-gray-700 dark:text-gray-200 hover:text-black dark:hover:text-white transition" />
               {conversations?.length > 0 && (
                 <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
                   {conversations.length > 9 ? "9+" : conversations.length}
                 </span>
               )}
-            </div>
+            </button>
 
             {/* Chats Dropdown */}
             {showChats && (
-              <div className="fixed left-1/2 -translate-x-1/2 top-20 w-[calc(100%-2rem)] max-w-sm md:absolute md:left-auto md:translate-x-0 md:right-0 md:top-auto md:mt-2 md:w-80 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50">
+              <div className="panel-elevated fixed left-1/2 -translate-x-1/2 top-20 w-[calc(100%-2rem)] max-w-sm md:absolute md:left-auto md:translate-x-0 md:right-0 md:top-auto md:mt-2 md:w-80 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50">
                 <div className="p-4 border-b border-gray-100 flex items-center justify-between">
                   <h3 className="font-semibold text-gray-800">Recent Chats</h3>
                   <button
@@ -282,6 +314,15 @@ const Navbar = () => {
             )}
           </div>
 
+          {/* THEME TOGGLE */}
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-gray-700 dark:text-gray-200"
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+
           {/* PROFILE DROPDOWN */}
           <div className="relative" ref={profileRef}>
             <div
@@ -290,7 +331,7 @@ const Navbar = () => {
                 setShowNotifications(false);
                 setShowChats(false);
               }}
-              className="w-10 h-10 rounded-full bg-gray-200 cursor-pointer hover:ring-2 hover:ring-purple-500 transition overflow-hidden"
+              className="w-10 h-10 rounded-full bg-gray-200 dark:bg-[#1b1b1b] cursor-pointer hover:ring-2 hover:ring-purple-500 transition overflow-hidden"
             >
               <Avatar
                 src={user?.avatar}
@@ -301,7 +342,7 @@ const Navbar = () => {
 
             {/* Profile Menu */}
             {showProfileMenu && (
-              <div className="fixed left-1/2 -translate-x-1/2 top-20 w-[calc(100%-2rem)] max-w-sm md:absolute md:left-auto md:translate-x-0 md:right-0 md:top-auto md:mt-2 md:w-60 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50">
+              <div className="panel-elevated fixed left-1/2 -translate-x-1/2 top-20 w-[calc(100%-2rem)] max-w-sm md:absolute md:left-auto md:translate-x-0 md:right-0 md:top-auto md:mt-2 md:w-60 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50">
                 <div className="p-4 border-b border-gray-100 bg-gray-50/50">
                   <p className="font-semibold text-gray-900 truncate">{user?.firstname} {user?.lastname}</p>
                   <p className="text-xs text-gray-500 truncate">@{user?.username || "username"}</p>
@@ -314,11 +355,6 @@ const Navbar = () => {
                   onClick={()=>{navigate("/settings");setShowProfileMenu(false)}}
                   >
                     <Settings className="w-4 h-4"  /> Settings
-                  </button>
-                  <button
-                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition"
-                  >
-
                   </button>
                   <div className="h-px bg-gray-100 my-1"></div>
                   <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition">

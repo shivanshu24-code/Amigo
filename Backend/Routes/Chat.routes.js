@@ -9,6 +9,7 @@ import {
     getUnreadCount,
     sharePostToFriend,
     shareStoryToFriend,
+    shareProfileToFriend,
     deleteMessage,
     createGroup,
     getSharedMedia,
@@ -34,6 +35,7 @@ router.post("/send-attachment/:userId", chatUpload.single("file"), sendAttachmen
 // Share a post with a friend
 router.post("/share/:postId/:userId", sharePostToFriend);
 router.post("/share-story/:storyId/:userId", shareStoryToFriend);
+router.post("/share-profile/:profileId/:userId", shareProfileToFriend);
 
 // Get all conversations
 router.get("/conversations", getConversations);

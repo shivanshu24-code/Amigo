@@ -16,7 +16,7 @@ const Feed = () => {
     }, []);
 
     return (
-        <div className="flex w-full h-full overflow-hidden bg-gray-50/50">
+        <div className="flex w-full h-full overflow-hidden bg-white dark:bg-black">
             {/* Main Feed Content */}
             <div className="flex-1 overflow-auto pb-20 md:pb-0">
                 <div className="max-w-2xl mx-auto py-4  md:px-0">

@@ -62,7 +62,7 @@ const ChatPage = () => {
 
   return (
     // Use h-full instead of h-screen since we're inside a flex container that already handles height
-    <div className="flex h-full w-full bg-gray-100 overflow-hidden">
+    <div className="flex h-full w-full bg-white dark:bg-black overflow-hidden">
 
       {/* Chat List */}
       <div

@@ -15,6 +15,13 @@ const shouldAttemptDecrypt = (text, encryptedKey, iv) => {
     return isBase64Like(text) && isBase64Like(encryptedKey) && isBase64Like(iv);
 };
 
+const getEntityId = (value) => {
+    if (!value) return null;
+    if (typeof value === "string") return value;
+    if (typeof value === "object" && value._id) return String(value._id);
+    return null;
+};
+
 export const useChatStore = create((set, get) => ({
     /* ===================== STATE ===================== */
     conversations: [],
@@ -26,6 +33,7 @@ export const useChatStore = create((set, get) => ({
     error: null,
     isTyping: false,
     typingUserId: null,
+    onlineUsers: [],
     isMobileChatOpen: false, // Track if mobile chat is open
     isBlocked: false, // Track if current chat user is blocked
     hasBlockedUser: false, // Track if current user is blocked by the other person
@@ -381,12 +389,35 @@ export const useChatStore = create((set, get) => ({
     },
 
     /* ===================== UPDATE MESSAGE READ STATUS ===================== */
-    updateMessageReadStatus: (conversationId) => {
+    updateMessageReadStatus: (conversationId, readBy) => {
+        const { user } = useAuthStore.getState();
+        const currentUserId = String(user?._id || "");
+        const normalizedConversationId = String(conversationId || "");
+
+        if (!normalizedConversationId || !readBy || String(readBy) === currentUserId) return;
+
         set((state) => ({
-            messages: state.messages.map(msg => ({
-                ...msg,
-                read: true,
-            })),
+            messages: state.messages.map((msg) => {
+                const messageConversationId = String(msg?.conversationId || "");
+                const senderId = String(getEntityId(msg?.sender) || "");
+                const shouldMarkRead =
+                    messageConversationId === normalizedConversationId &&
+                    senderId === currentUserId;
+
+                return shouldMarkRead ? { ...msg, read: true } : msg;
+            }),
+            conversations: state.conversations.map((conv) => {
+                if (String(conv?._id || "") !== normalizedConversationId) return conv;
+                const lastSenderId = String(getEntityId(conv?.lastMessage?.sender) || "");
+                if (lastSenderId !== currentUserId || !conv?.lastMessage) return conv;
+                return {
+                    ...conv,
+                    lastMessage: {
+                        ...conv.lastMessage,
+                        read: true,
+                    },
+                };
+            }),
         }));
     },
 
@@ -423,6 +454,26 @@ export const useChatStore = create((set, get) => ({
         if (currentChat && currentChat._id === userId) {
             set({ isTyping: false, typingUserId: null });
         }
+    },
+
+    setOnlineUsers: (userIds = []) => {
+        set({ onlineUsers: Array.from(new Set((userIds || []).map((id) => String(id)))) });
+    },
+
+    setUserOnline: (userId) => {
+        if (!userId) return;
+        set((state) => {
+            const normalizedId = String(userId);
+            if (state.onlineUsers.includes(normalizedId)) return state;
+            return { onlineUsers: [...state.onlineUsers, normalizedId] };
+        });
+    },
+
+    setUserOffline: (userId) => {
+        if (!userId) return;
+        set((state) => ({
+            onlineUsers: state.onlineUsers.filter((id) => id !== String(userId)),
+        }));
     },
 
     /* ===================== MARK AS READ ===================== */
@@ -644,6 +695,7 @@ export const useChatStore = create((set, get) => ({
             error: null,
             isTyping: false,
             typingUserId: null,
+            onlineUsers: [],
             isMobileChatOpen: false,
             isBlocked: false,
             hasBlockedUser: false,

@@ -8,6 +8,8 @@ const PostHeader = ({ author, time, postId }) => {
     const navigate = useNavigate();
     const { avatar, username, firstname, lastname, _id: authorId } = author || {};
     const [showDropdown, setShowDropdown] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deletingPost, setDeletingPost] = useState(false);
     const dropdownRef = useRef(null);
 
     useEffect(() => {
@@ -19,6 +21,15 @@ const PostHeader = ({ author, time, postId }) => {
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
+
+    const handleConfirmDeletePost = async () => {
+        if (deletingPost) return;
+        setDeletingPost(true);
+        const { usePostStore } = await import("../../Store/PostStore.js");
+        await usePostStore.getState().deletePost(postId);
+        setDeletingPost(false);
+        setShowDeleteConfirm(false);
+    };
 
     return (
         <div className="flex items-center gap-3 px-4 py-3 relative">
@@ -90,14 +101,8 @@ const PostHeader = ({ author, time, postId }) => {
                                 </li>
                                 <li>
                                     <button
-                                        onClick={async () => {
-                                            if (window.confirm("Are you sure you want to delete this post?")) {
-                                                const { usePostStore } = await import("../../Store/PostStore.js");
-                                                const result = await usePostStore.getState().deletePost(postId);
-                                                if (result.success) {
-                                                    // Post removed from store, UI will update
-                                                }
-                                            }
+                                        onClick={() => {
+                                            setShowDeleteConfirm(true);
                                             setShowDropdown(false);
                                         }}
                                         className="flex items-center gap-3 text-red-600 hover:bg-red-50 py-3 px-4 w-full text-left rounded-xl transition"
@@ -111,6 +116,37 @@ const PostHeader = ({ author, time, postId }) => {
                     </ul>
                 )}
             </div>
+
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/40"
+                        onClick={() => !deletingPost && setShowDeleteConfirm(false)}
+                    />
+                    <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-100 p-5">
+                        <h3 className="text-base font-semibold text-gray-900">Delete post?</h3>
+                        <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                            Do you really want to delete this post?
+                        </p>
+                        <div className="mt-4 flex items-center justify-end gap-2">
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                disabled={deletingPost}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmDeletePost}
+                                disabled={deletingPost}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {deletingPost ? "Deleting..." : "Delete"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

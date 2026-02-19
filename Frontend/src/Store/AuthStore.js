@@ -310,6 +310,30 @@ export const useAuthStore = create(
           return false;
         }
       },
+      updateReadReceipts: async (readReceiptsEnabled) => {
+        set({ loading: true, error: null });
+        try {
+          const res = await api.put("/auth/read-receipts", { readReceiptsEnabled });
+          if (res.data.success) {
+            set((state) => ({
+              user: {
+                ...state.user,
+                readReceiptsEnabled: res.data.readReceiptsEnabled,
+              },
+              loading: false,
+            }));
+            return true;
+          }
+          set({ loading: false });
+          return false;
+        } catch (err) {
+          set({
+            loading: false,
+            error: err.response?.data?.message || err.message,
+          });
+          return false;
+        }
+      },
     }),
     {
       name: "auth-store",
